@@ -156,3 +156,157 @@ a {
     transition-duration: 0.01ms !important;
   }
 }
+
+.login-shell {
+  display: grid;
+  width: min(100% - 32px, 460px);
+  min-height: 100svh;
+  margin: 0 auto;
+  align-content: center;
+  padding: 40px 0;
+}
+
+.login-form {
+  display: grid;
+  gap: 22px;
+  border-top: 4px solid var(--red);
+  border-bottom: 1px solid var(--line);
+  padding: 32px 0 36px;
+}
+
+.login-mark {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 1px solid var(--line);
+  color: var(--red);
+}
+
+.login-kicker,
+.login-summary,
+.login-form h1 {
+  margin: 0;
+}
+
+.login-kicker {
+  color: var(--red);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.login-form h1 {
+  margin-top: 8px;
+  font-family: "Songti SC", "STSong", serif;
+  font-size: 2.25rem;
+  line-height: 1.2;
+}
+
+.login-summary {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.login-form label,
+.login-form label span {
+  display: grid;
+}
+
+.login-form label {
+  gap: 8px;
+}
+
+.login-form label span {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.login-form input {
+  min-height: 50px;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  padding: 0 14px;
+  color: var(--ink);
+  background: rgb(255 255 255 / 44%);
+  font: inherit;
+}
+
+.login-form input:focus {
+  border-color: var(--moss);
+  outline: 2px solid color-mix(in srgb, var(--moss) 25%, transparent);
+  outline-offset: 1px;
+}
+
+.login-form button {
+  display: inline-flex;
+  min-height: 50px;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  border: 0;
+  padding: 0 20px;
+  color: #fff;
+  background: var(--red);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.login-form button:disabled {
+  cursor: wait;
+  opacity: 0.68;
+}
+
+.login-error {
+  margin: -8px 0 0;
+  color: var(--red);
+  font-size: 0.85rem;
+}
+
+.login-footnote {
+  margin: 18px 0 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.admin-placeholder {
+  width: min(100% - 32px, 1180px);
+  margin: 0 auto;
+  padding: 64px 0;
+}
+
+.admin-placeholder p,
+.admin-placeholder h1 {
+  margin: 0;
+}
+
+.admin-placeholder p {
+  color: var(--red);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.admin-placeholder h1 {
+  margin-top: 12px;
+  font-family: "Songti SC", "STSong", serif;
+  font-size: 2.25rem;
+}
+
+.admin-placeholder span {
+  display: block;
+  margin-top: 12px;
+  color: var(--muted);
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin {
+  animation: spin 900ms linear infinite;
+}

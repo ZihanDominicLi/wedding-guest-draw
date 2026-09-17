@@ -1,0 +1,357 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum GuestRelation {
+  GROOM_RELATIVE
+  BRIDE_RELATIVE
+  GROOM_FRIEND
+  BRIDE_FRIEND
+  MUTUAL_FRIEND
+  COLLEAGUE
+  CLASSMATE
+  OTHER
+}
+
+enum GroupingRuleKind {
+  PRIMARY
+  TAG
+}
+
+enum DrawRoundStatus {
+  PREPARING
+  LOCKED
+  DRAWN
+  PUBLISHED
+  CANCELLED
+}
+
+enum WinnerStatus {
+  RESERVED
+  PUBLISHED
+  REVOKED
+}
+
+model WeddingSettings {
+  id                   String    @id @default("default")
+  groomName            String    @default("")
+  brideName            String    @default("")
+  weddingDate          DateTime?
+  venueProvince        String    @default("")
+  venueCity            String    @default("")
+  registrationOpen     Boolean   @default(true)
+  formalDrawMode       Boolean   @default(false)
+  screenTitle          String    @default("我们的婚礼")
+  screenBackgroundPath String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+}
+
+model AdminUser {
+  id             String         @id @default(uuid())
+  name           String
+  email          String         @unique
+  emailVerified  Boolean        @default(false)
+  image          String?
+  role           String         @default("admin")
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  sessions       Session[]
+  accounts       Account[]
+  groupingRules  GroupingRule[] @relation("RuleCreator")
+  operatedRounds DrawRound[]    @relation("RoundOperator")
+  auditEvents    AuditEvent[]
+
+  @@map("admin_user")
+}
+
+model Session {
+  id        String    @id
+  expiresAt DateTime
+  token     String    @unique
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      AdminUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  user                  AdminUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String    @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime? @default(now())
+  updatedAt  DateTime? @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
+}
+
+model Group {
+  id           String         @id @default(uuid())
+  key          String         @unique
+  name         String
+  color        String
+  sortOrder    Int
+  enabled      Boolean        @default(true)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  guests       Guest[]
+  primaryRules GroupingRule[] @relation("PrimaryRuleGroup")
+  prizeGroups  PrizeGroup[]
+  drawRounds   DrawRound[]
+
+  @@map("guest_group")
+}
+
+model Tag {
+  id        String         @id @default(uuid())
+  key       String         @unique
+  name      String
+  color     String
+  enabled   Boolean        @default(true)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  guests    GuestTag[]
+  tagRules  GroupingRule[] @relation("TagRuleTarget")
+
+  @@map("tag")
+}
+
+model Guest {
+  id                     String                  @id @default(uuid())
+  attendanceNumber       Int                     @unique @default(autoincrement())
+  name                   String
+  normalizedName         String
+  phoneLast4             String
+  collisionDiscriminator Int                     @default(0)
+  relation               GuestRelation
+  childCount             Int                     @default(0)
+  originProvince         String
+  originCity             String
+  isOutOfTown            Boolean
+  primaryGroupId         String?
+  matchedRuleId          String?
+  groupLocked            Boolean                 @default(false)
+  enabled                Boolean                 @default(true)
+  checkedInAt            DateTime                @default(now())
+  deviceHash             String?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  primaryGroup           Group?                  @relation(fields: [primaryGroupId], references: [id], onDelete: SetNull)
+  matchedRule            GroupingRule?           @relation(fields: [matchedRuleId], references: [id], onDelete: SetNull)
+  tags                   GuestTag[]
+  snapshots              DrawCandidateSnapshot[]
+  winners                Winner[]
+
+  @@unique([normalizedName, phoneLast4, collisionDiscriminator], map: "Guest_public_identity_key")
+  @@index([primaryGroupId, enabled])
+  @@index([checkedInAt])
+  @@map("guest")
+}
+
+model GuestTag {
+  guestId   String
+  tagId     String
+  guest     Guest    @relation(fields: [guestId], references: [id], onDelete: Cascade)
+  tag       Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([guestId, tagId])
+  @@index([tagId])
+  @@map("guest_tag")
+}
+
+model GroupingRule {
+  id            String           @id @default(uuid())
+  name          String
+  kind          GroupingRuleKind
+  enabled       Boolean          @default(true)
+  priority      Int
+  conditions    Json
+  targetGroupId String?
+  targetTagId   String?
+  version       Int              @default(1)
+  createdById   String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  targetGroup   Group?           @relation("PrimaryRuleGroup", fields: [targetGroupId], references: [id], onDelete: SetNull)
+  targetTag     Tag?             @relation("TagRuleTarget", fields: [targetTagId], references: [id], onDelete: SetNull)
+  createdBy     AdminUser?       @relation("RuleCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  matchedGuests Guest[]
+
+  @@index([kind, enabled, priority])
+  @@map("grouping_rule")
+}
+
+model Prize {
+  id                 String       @id @default(uuid())
+  name               String
+  imagePath          String?
+  plannedWinnerCount Int
+  sortOrder          Int
+  enabled            Boolean      @default(true)
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  allowedGroups      PrizeGroup[]
+  rounds             DrawRound[]
+  winners            Winner[]
+
+  @@map("prize")
+}
+
+model PrizeGroup {
+  prizeId String
+  groupId String
+  prize   Prize  @relation(fields: [prizeId], references: [id], onDelete: Cascade)
+  group   Group  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@id([prizeId, groupId])
+  @@index([groupId])
+  @@map("prize_group")
+}
+
+model DrawRound {
+  id                 String                  @id @default(uuid())
+  prizeId            String
+  targetGroupId      String
+  plannedWinnerCount Int
+  status             DrawRoundStatus         @default(PREPARING)
+  algorithmVersion   String                  @default("crypto-fy-v1")
+  operatorId         String?
+  version            Int                     @default(1)
+  lockedAt           DateTime?
+  drawnAt            DateTime?
+  publishedAt        DateTime?
+  cancelledAt        DateTime?
+  cancellationReason String?
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+  prize              Prize                   @relation(fields: [prizeId], references: [id])
+  targetGroup        Group                   @relation(fields: [targetGroupId], references: [id])
+  operator           AdminUser?              @relation("RoundOperator", fields: [operatorId], references: [id], onDelete: SetNull)
+  snapshots          DrawCandidateSnapshot[]
+  winners            Winner[]
+
+  @@index([status, createdAt])
+  @@map("draw_round")
+}
+
+model DrawCandidateSnapshot {
+  id          String    @id @default(uuid())
+  roundId     String
+  guestId     String
+  displayName String
+  groupName   String
+  createdAt   DateTime  @default(now())
+  round       DrawRound @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  guest       Guest     @relation(fields: [guestId], references: [id])
+
+  @@unique([roundId, guestId])
+  @@index([guestId])
+  @@map("draw_candidate_snapshot")
+}
+
+model Winner {
+  id           String       @id @default(uuid())
+  roundId      String
+  guestId      String
+  prizeId      String
+  status       WinnerStatus @default(RESERVED)
+  publishedAt  DateTime?
+  revokedAt    DateTime?
+  revokeReason String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  round        DrawRound    @relation(fields: [roundId], references: [id])
+  guest        Guest        @relation(fields: [guestId], references: [id])
+  prize        Prize        @relation(fields: [prizeId], references: [id])
+
+  @@unique([roundId, guestId])
+  @@index([guestId, status])
+  @@map("winner")
+}
+
+model AuditEvent {
+  id         String     @id @default(uuid())
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String?
+  beforeJson Json?
+  afterJson  Json?
+  reason     String?
+  createdAt  DateTime   @default(now())
+  actor      AdminUser? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId, createdAt])
+  @@index([actorId, createdAt])
+  @@map("audit_event")
+}
+
+model IdempotencyRecord {
+  id           String   @id @default(uuid())
+  scope        String
+  key          String
+  responseJson Json?
+  statusCode   Int?
+  createdAt    DateTime @default(now())
+  expiresAt    DateTime
+
+  @@unique([scope, key])
+  @@index([expiresAt])
+  @@map("idempotency_record")
+}
+
+model RateLimitBucket {
+  id          String   @id @default(uuid())
+  bucketKey   String
+  windowStart DateTime
+  count       Int      @default(0)
+  expiresAt   DateTime
+
+  @@unique([bucketKey, windowStart])
+  @@index([expiresAt])
+  @@map("rate_limit_bucket")
+}
+
+model BackupRecord {
+  id             String   @id @default(uuid())
+  path           String
+  checksum       String
+  uploadsJson    Json
+  overrideReason String?
+  createdAt      DateTime @default(now())
+
+  @@index([createdAt])
+  @@map("backup_record")
+}
