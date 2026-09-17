@@ -44,9 +44,9 @@ export async function getScreenSnapshot() {
       targetGroup: { select: { name: true } },
       winners: {
         where: { status: { in: ["RESERVED", "PUBLISHED"] } },
-        select: { id: true, status: true, guest: { select: { name: true } } },
+        select: { id: true, guestId: true, status: true },
       },
-      snapshots: { select: { displayName: true } },
+      snapshots: { select: { guestId: true, displayName: true } },
     },
   });
   const settings = await db.weddingSettings.findUniqueOrThrow({ where: { id: "default" } });
@@ -61,7 +61,13 @@ export async function getScreenSnapshot() {
           prizeImagePath: round.prize.imagePath,
           groupName: round.targetGroup.name,
           candidates: round.snapshots.map((item) => item.displayName),
-          winners: round.winners.map((winner) => ({ id: winner.id, name: winner.guest.name, status: winner.status })),
+          winners: round.winners.map((winner) => ({
+            id: winner.id,
+            name:
+              round.snapshots.find((snapshot) => snapshot.guestId === winner.guestId)
+                ?.displayName ?? "宾客",
+            status: winner.status,
+          })),
         }
       : null,
   };
