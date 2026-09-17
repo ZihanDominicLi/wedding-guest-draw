@@ -1428,6 +1428,80 @@ a {
   .candidate-field > i { animation: none; }
 }
 
+.operations-panel {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 48px;
+  padding-top: 34px;
+}
+
+.operations-panel section > header {
+  border-bottom: 1px solid var(--ink);
+  padding-bottom: 12px;
+}
+
+.operations-panel h2 {
+  margin: 6px 0 0;
+  font-size: 1.05rem;
+}
+
+.operations-panel section > p,
+.operations-panel section > span,
+.backup-list p {
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.7;
+}
+
+.operation-action {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  padding: 0 15px;
+  color: #fff;
+  background: var(--red);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.operation-action:disabled {
+  opacity: 0.55;
+}
+
+.backup-list {
+  border-top: 1px solid var(--line);
+  margin-top: 24px;
+}
+
+.backup-list > div {
+  display: flex;
+  min-height: 54px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.72rem;
+}
+
+.backup-list code {
+  color: var(--muted);
+}
+
+.audit-table-wrap {
+  margin-top: 28px;
+}
+
+.audit-table {
+  min-width: 900px;
+}
+
+@media (max-width: 760px) {
+  .operations-panel { grid-template-columns: 1fr; }
+}
+
 .login-shell {
   display: grid;
   width: min(100% - 32px, 460px);

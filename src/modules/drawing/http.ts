@@ -3,6 +3,7 @@ import { ZodError } from "zod";
 import { UnauthorizedError } from "@/lib/auth";
 import { problem } from "@/lib/http";
 import {
+  BackupRequiredError,
   DrawingConflictError,
   DrawingStateError,
   DrawingValidationError,
@@ -14,6 +15,9 @@ export function drawingProblem(error: unknown): Response | null {
   }
   if (error instanceof DrawingConflictError) {
     return problem(409, "DRAW_CONFLICT", "候选状态已变化，请重新创建抽奖轮次");
+  }
+  if (error instanceof BackupRequiredError) {
+    return problem(409, "BACKUP_REQUIRED", "正式抽奖前需要完成一次新备份");
   }
   if (error instanceof DrawingStateError) {
     return problem(409, "DRAW_STATE_CHANGED", "抽奖状态已变化，请刷新后重试");

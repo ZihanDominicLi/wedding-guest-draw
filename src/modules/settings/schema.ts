@@ -7,5 +7,6 @@ export const weddingSettingsSchema = z.object({
   venueProvince: z.string().trim().max(30),
   venueCity: z.string().trim().max(30),
   registrationOpen: z.boolean(),
+  formalDrawMode: z.boolean(),
   screenTitle: z.string().trim().min(1).max(80),
 });

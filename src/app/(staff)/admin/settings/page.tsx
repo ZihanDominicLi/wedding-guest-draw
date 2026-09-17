@@ -36,6 +36,7 @@ export default async function SettingsPage() {
           venueProvince: settings.venueProvince,
           venueCity: settings.venueCity,
           registrationOpen: settings.registrationOpen,
+          formalDrawMode: settings.formalDrawMode,
           screenTitle: settings.screenTitle,
           screenBackgroundPath: settings.screenBackgroundPath,
         }}

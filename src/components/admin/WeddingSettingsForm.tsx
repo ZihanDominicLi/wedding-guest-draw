@@ -10,6 +10,7 @@ type SettingsValue = {
   venueProvince: string;
   venueCity: string;
   registrationOpen: boolean;
+  formalDrawMode: boolean;
   screenTitle: string;
   screenBackgroundPath: string | null;
 };
@@ -53,6 +54,10 @@ export function WeddingSettingsForm({ initialValue }: { initialValue: SettingsVa
       <label className="settings-toggle">
         <input name="registrationOpen" type="checkbox" defaultChecked={initialValue.registrationOpen} />
         <span><strong>开放现场登记</strong><small>关闭后扫码页面只显示暂停提示</small></span>
+      </label>
+      <label className="settings-toggle">
+        <input name="formalDrawMode" type="checkbox" defaultChecked={initialValue.formalDrawMode} />
+        <span><strong>正式抽奖模式</strong><small>锁定候选前必须有 30 分钟内的数据库备份</small></span>
       </label>
       <footer>
         <button type="submit" disabled={pending}>

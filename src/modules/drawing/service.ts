@@ -33,6 +33,13 @@ export class DrawingValidationError extends Error {
   }
 }
 
+export class BackupRequiredError extends Error {
+  constructor() {
+    super("A fresh backup is required before locking a formal draw");
+    this.name = "BackupRequiredError";
+  }
+}
+
 function assertVersion(
   round: { status: string; version: number },
   expectedStatus: string | string[],
@@ -195,11 +202,23 @@ export async function lockRound(
   expectedVersion: number,
   actorId: string,
   idempotencyKey: string,
+  options: { backupOverrideReason?: string } = {},
 ) {
   const result = await serializable((transaction) =>
     withIdempotency(transaction, `draw:lock:${roundId}`, idempotencyKey, async () => {
       const round = await transaction.drawRound.findUniqueOrThrow({ where: { id: roundId } });
       assertVersion(round, "PREPARING", expectedVersion);
+      const settings = await transaction.weddingSettings.findUniqueOrThrow({ where: { id: "default" } });
+      if (settings.formalDrawMode) {
+        const freshBackup = await transaction.backupRecord.findFirst({
+          where: { createdAt: { gte: new Date(Date.now() - 30 * 60 * 1000) } },
+          orderBy: { createdAt: "desc" },
+        });
+        if (!freshBackup && !options.backupOverrideReason?.trim()) throw new BackupRequiredError();
+        if (!freshBackup) {
+          await transaction.auditEvent.create({ data: { actorId, action: "draw.backup_override", entityType: "DrawRound", entityId: roundId, reason: options.backupOverrideReason!.trim() } });
+        }
+      }
       const candidates = await transaction.guest.findMany({
         where: eligibleGuestWhere(round.targetGroupId),
         select: { id: true, name: true, primaryGroup: { select: { name: true } } },

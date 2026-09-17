@@ -55,9 +55,29 @@ export async function requireAdmin(requestHeaders: Headers): Promise<SessionUser
   };
 }
 
+export async function requireFreshAdmin(
+  requestHeaders: Headers,
+  maxAgeMinutes = 30,
+): Promise<SessionUser> {
+  const session = await auth.api.getSession({ headers: requestHeaders });
+  if (!session?.user) throw new UnauthorizedError();
+  const createdAt = new Date(session.session.createdAt).getTime();
+  if (Date.now() - createdAt > maxAgeMinutes * 60 * 1000) {
+    throw new FreshAuthenticationRequiredError();
+  }
+  return { id: session.user.id, name: session.user.name, email: session.user.email };
+}
+
 export class UnauthorizedError extends Error {
   constructor() {
     super("Administrator session required");
     this.name = "UnauthorizedError";
+  }
+}
+
+export class FreshAuthenticationRequiredError extends Error {
+  constructor() {
+    super("Recent administrator authentication required");
+    this.name = "FreshAuthenticationRequiredError";
   }
 }

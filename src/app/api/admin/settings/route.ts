@@ -40,6 +40,7 @@ export async function PUT(request: Request) {
       venueProvince: formData.get("venueProvince") ?? "",
       venueCity: formData.get("venueCity") ?? "",
       registrationOpen: formData.get("registrationOpen") === "on",
+      formalDrawMode: formData.get("formalDrawMode") === "on",
       screenTitle: formData.get("screenTitle") ?? "我们的婚礼",
     });
     const previous = await db.weddingSettings.findUniqueOrThrow({
@@ -87,6 +88,7 @@ export async function PUT(request: Request) {
             venueProvince: settings.venueProvince,
             venueCity: settings.venueCity,
             registrationOpen: settings.registrationOpen,
+            formalDrawMode: settings.formalDrawMode,
             screenTitle: settings.screenTitle,
             hasBackground: Boolean(settings.screenBackgroundPath),
           },

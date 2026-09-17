@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/lib/db";
 import {
   cancelRound,
+  BackupRequiredError,
   createRound,
   drawRound,
   DrawingStateError,
@@ -18,6 +19,8 @@ let groupId: string;
 let prizeId: string;
 
 async function cleanup() {
+  await db.weddingSettings.update({ where: { id: "default" }, data: { formalDrawMode: false } });
+  await db.backupRecord.deleteMany({ where: { path: { startsWith: `${prefix}backup` } } });
   const rounds = await db.drawRound.findMany({
     where: { targetGroup: { key: { startsWith: prefix } } },
     select: { id: true },
@@ -117,5 +120,15 @@ describe("drawing service", () => {
     const next = await createRound({ prizeId, targetGroupId: groupId, winnerCount: 1 }, actorId, "create-four");
     await expect(lockRound(next.id, next.version, actorId, "lock-four")).resolves.toMatchObject({ candidateCount: 1 });
     expect(guest.id).toBeTruthy();
+  });
+
+  it("requires a fresh backup before locking a formal draw", async () => {
+    await createGuest("401");
+    await db.weddingSettings.update({ where: { id: "default" }, data: { formalDrawMode: true } });
+    const created = await createRound({ prizeId, targetGroupId: groupId, winnerCount: 1 }, actorId, "create-formal");
+
+    await expect(lockRound(created.id, created.version, actorId, "lock-formal-missing")).rejects.toBeInstanceOf(BackupRequiredError);
+    await db.backupRecord.create({ data: { path: `${prefix}backup-fresh`, checksum: "test", uploadsJson: [] } });
+    await expect(lockRound(created.id, created.version, actorId, "lock-formal-ready")).resolves.toMatchObject({ status: "LOCKED" });
   });
 });
