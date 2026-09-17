@@ -1,36 +1,54 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 婚礼现场宾客登记与分组抽奖
 
-## Getting Started
+面向单场婚礼、500 人以内的现场系统。宾客扫码逐人登记，服务端按规则分组；管理员管理名单、奖品与规则；主持人在登录后的控制台按组抽奖，公开大屏只展示已持久化的服务端结果。
 
-First, run the development server:
+## 功能
+
+- 三步手机登记：姓名、手机号后四位、关系、儿童人数、出发地
+- 自动主组与多标签；人工锁定分组不会被批量重算覆盖
+- 实时现场看板、宾客筛选/编辑/CSV、规则影响预览
+- 加密随机抽取、冻结候选快照、一人最多中奖一次、完整审计
+- 奖品管理、主持控制台、Three.js 只读仪式大屏、刷新恢复
+- PostgreSQL 持久限流、请求幂等、同源保护、健康检查
+- 数据库备份、应急 CSV、Docker Compose 与 Caddy 自动 HTTPS
+
+## 本地开发
+
+要求 Node.js 24、pnpm 9 和 PostgreSQL 17。
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+cp .env.example .env
+pnpm install
+pnpm prisma migrate deploy
+pnpm seed
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+打开 `http://127.0.0.1:3000`。入口分别为 `/join`、`/admin`、`/draw`、`/screen`。
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 服务器部署
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+服务器只需 Docker、已解析到该服务器公网 IP 的域名，以及开放 TCP 80/443 和 UDP 443。完整步骤见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)，现场彩排清单见 [docs/REHEARSAL.md](docs/REHEARSAL.md)。
 
-## Learn More
+```bash
+cp .env.example .env
+# 修改 .env 中所有 replace-with 和域名
+docker compose up -d --build
+docker compose ps
+```
 
-To learn more about Next.js, take a look at the following resources:
+数据库没有宿主端口映射；上传、数据库与备份分别保存在 Docker 持久卷中。
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 常用命令
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+pnpm seed:demo
+pnpm event:reset --confirm RESET_TEST_EVENT
+pnpm lint
+pnpm typecheck
+pnpm vitest run
+pnpm playwright test
+pnpm build
+```
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+许可证与主要第三方组件见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

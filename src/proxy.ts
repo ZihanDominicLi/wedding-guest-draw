@@ -16,6 +16,9 @@ export function proxy(request: NextRequest) {
     }
     throw error;
   }
+  if (request.nextUrl.pathname === "/api/registration") {
+    return NextResponse.next();
+  }
   if (request.cookies.has(SESSION_COOKIE)) {
     return NextResponse.next();
   }
@@ -33,5 +36,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin/:path*", "/draw/:path*", "/api/admin/:path*", "/api/draw/:path*"],
+  matcher: ["/admin/:path*", "/draw/:path*", "/api/admin/:path*", "/api/draw/:path*", "/api/registration"],
 };

@@ -19,7 +19,8 @@ export async function POST(request: Request) {
 
   try {
     const clientIp = request.headers.get("x-real-ip") ?? "unknown";
-    await consumeRateLimit(`registration:${clientIp}`, { limit: 30, windowSeconds: 300 });
+    // Venue Wi-Fi commonly puts hundreds of guests behind one public address.
+    await consumeRateLimit(`registration:${clientIp}`, { limit: 600, windowSeconds: 300 });
     const result = await registerGuest(await request.json(), idempotencyKey);
     return ok(result);
   } catch (error) {

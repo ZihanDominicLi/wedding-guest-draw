@@ -11,7 +11,10 @@ export function assertSameOrigin(request: Request) {
   if (SAFE_METHODS.has(request.method.toUpperCase())) return;
   const origin = request.headers.get("origin");
   if (!origin) return;
-  if (new URL(origin).origin !== new URL(request.url).origin) {
+  const expectedOrigin = new URL(
+    process.env.BETTER_AUTH_URL ?? request.url,
+  ).origin;
+  if (new URL(origin).origin !== expectedOrigin) {
     throw new CrossOriginRequestError();
   }
 }

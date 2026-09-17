@@ -1,0 +1,13 @@
+{$WEDDING_DOMAIN} {
+  encode zstd gzip
+  reverse_proxy app:3000 {
+    header_up X-Real-IP {remote_host}
+    header_up X-Forwarded-Proto {scheme}
+  }
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    X-Content-Type-Options "nosniff"
+    Referrer-Policy "same-origin"
+    Permissions-Policy "camera=(), microphone=(), geolocation=()"
+  }
+}
