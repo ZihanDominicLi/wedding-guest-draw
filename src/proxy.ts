@@ -1,8 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { assertSameOrigin, CrossOriginRequestError } from "@/lib/csrf";
+
 const SESSION_COOKIE = "wedding-draw.session_token";
 
 export function proxy(request: NextRequest) {
+  try {
+    assertSameOrigin(request);
+  } catch (error) {
+    if (error instanceof CrossOriginRequestError) {
+      return Response.json(
+        { error: { code: "CROSS_ORIGIN_REJECTED", message: "请求来源无效" } },
+        { status: 403 },
+      );
+    }
+    throw error;
+  }
   if (request.cookies.has(SESSION_COOKIE)) {
     return NextResponse.next();
   }

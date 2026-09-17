@@ -2,6 +2,7 @@ import { ZodError } from "zod";
 
 import { UnauthorizedError } from "@/lib/auth";
 import { problem } from "@/lib/http";
+import { InvalidIdempotencyKeyError } from "@/lib/idempotency";
 import {
   BackupRequiredError,
   DrawingConflictError,
@@ -22,7 +23,7 @@ export function drawingProblem(error: unknown): Response | null {
   if (error instanceof DrawingStateError) {
     return problem(409, "DRAW_STATE_CHANGED", "抽奖状态已变化，请刷新后重试");
   }
-  if (error instanceof DrawingValidationError || error instanceof ZodError) {
+  if (error instanceof DrawingValidationError || error instanceof InvalidIdempotencyKeyError || error instanceof ZodError) {
     return problem(422, "INVALID_DRAW_REQUEST", "抽奖参数无效");
   }
   return null;

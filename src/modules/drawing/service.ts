@@ -3,6 +3,7 @@ import { randomInt as cryptoRandomInt } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 
 import { db } from "@/lib/db";
+import { withTransactionIdempotency } from "@/lib/idempotency";
 import { publishLiveEvent } from "@/modules/live/bus";
 import { eligibleGuestWhere } from "./eligibility";
 import { sampleWithoutReplacement, type RandomInt } from "./random";
@@ -76,31 +77,6 @@ function asJson<T>(value: T): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 }
 
-async function withIdempotency<T>(
-  transaction: Transaction,
-  scope: string,
-  key: string,
-  operation: () => Promise<T>,
-): Promise<T> {
-  if (!key || key.length > 160) throw new DrawingValidationError("Invalid idempotency key");
-  const replay = await transaction.idempotencyRecord.findUnique({
-    where: { scope_key: { scope, key } },
-  });
-  if (replay?.responseJson) return replay.responseJson as T;
-
-  const result = await operation();
-  await transaction.idempotencyRecord.create({
-    data: {
-      scope,
-      key,
-      responseJson: asJson(result),
-      statusCode: 200,
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-    },
-  });
-  return result;
-}
-
 function roundResult(
   round: {
     id: string;
@@ -168,7 +144,7 @@ export async function createRound(
     throw new DrawingValidationError("Winner count must be a positive integer");
   }
   const result = await serializable((transaction) =>
-    withIdempotency(transaction, "draw:create", idempotencyKey, async () => {
+    withTransactionIdempotency(transaction, "draw:create", idempotencyKey, async () => {
       const prize = await transaction.prize.findFirst({
         where: {
           id: input.prizeId,
@@ -205,7 +181,7 @@ export async function lockRound(
   options: { backupOverrideReason?: string } = {},
 ) {
   const result = await serializable((transaction) =>
-    withIdempotency(transaction, `draw:lock:${roundId}`, idempotencyKey, async () => {
+    withTransactionIdempotency(transaction, `draw:lock:${roundId}`, idempotencyKey, async () => {
       const round = await transaction.drawRound.findUniqueOrThrow({ where: { id: roundId } });
       assertVersion(round, "PREPARING", expectedVersion);
       const settings = await transaction.weddingSettings.findUniqueOrThrow({ where: { id: "default" } });
@@ -257,7 +233,7 @@ export async function drawRound(
 ) {
   try {
     const result = await serializable((transaction) =>
-      withIdempotency(transaction, `draw:execute:${roundId}`, idempotencyKey, async () => {
+      withTransactionIdempotency(transaction, `draw:execute:${roundId}`, idempotencyKey, async () => {
         const round = await transaction.drawRound.findUniqueOrThrow({
           where: { id: roundId },
           include: { snapshots: { orderBy: { id: "asc" } } },
@@ -311,7 +287,7 @@ export async function publishRound(
   idempotencyKey: string,
 ) {
   const result = await serializable((transaction) =>
-    withIdempotency(transaction, `draw:publish:${roundId}`, idempotencyKey, async () => {
+    withTransactionIdempotency(transaction, `draw:publish:${roundId}`, idempotencyKey, async () => {
       const round = await transaction.drawRound.findUniqueOrThrow({
         where: { id: roundId },
         include: { winners: true, snapshots: true },
@@ -350,7 +326,7 @@ export async function cancelRound(
 ) {
   if (!reason.trim()) throw new DrawingValidationError("Cancellation reason is required");
   const result = await serializable((transaction) =>
-    withIdempotency(transaction, `draw:cancel:${roundId}`, idempotencyKey, async () => {
+    withTransactionIdempotency(transaction, `draw:cancel:${roundId}`, idempotencyKey, async () => {
       const round = await transaction.drawRound.findUniqueOrThrow({ where: { id: roundId } });
       assertVersion(round, ["PREPARING", "LOCKED", "DRAWN"], expectedVersion);
       const now = new Date();
@@ -383,7 +359,7 @@ export async function revokeWinner(
 ) {
   if (!reason.trim()) throw new DrawingValidationError("Revocation reason is required");
   return serializable((transaction) =>
-    withIdempotency(transaction, `draw:revoke:${winnerId}`, idempotencyKey, async () => {
+    withTransactionIdempotency(transaction, `draw:revoke:${winnerId}`, idempotencyKey, async () => {
       const winner = await transaction.winner.findUniqueOrThrow({ where: { id: winnerId } });
       if (!ACTIVE_WINNER_STATUSES.includes(winner.status as (typeof ACTIVE_WINNER_STATUSES)[number])) {
         throw new DrawingStateError("Winner is not active");

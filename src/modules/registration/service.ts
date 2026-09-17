@@ -2,6 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
+import { withTransactionIdempotency } from "@/lib/idempotency";
 import { evaluateGrouping } from "@/modules/grouping";
 import { loadActiveGroupingRules } from "@/modules/grouping/service";
 import { publishLiveEvent } from "@/modules/live/bus";
@@ -11,18 +12,14 @@ import { registrationSchema, type RegistrationInput } from "./schema";
 const IDEMPOTENCY_SCOPE = "public-registration";
 const idempotencyKeySchema = z.string().trim().min(8).max(128);
 
-const registrationResultSchema = z.object({
-  guestId: z.string(),
-  attendanceNumber: z.number().int().positive(),
-  displayName: z.string(),
-  primaryGroup: z
-    .object({ key: z.string(), name: z.string() })
-    .nullable(),
-  grouped: z.boolean(),
-  created: z.boolean(),
-});
-
-export type RegistrationResult = z.infer<typeof registrationResultSchema>;
+export type RegistrationResult = {
+  guestId: string;
+  attendanceNumber: number;
+  displayName: string;
+  primaryGroup: { key: string; name: string } | null;
+  grouped: boolean;
+  created: boolean;
+};
 
 function normalizedLocation(value: string): string {
   return value.normalize("NFKC").trim().toLocaleLowerCase("zh-CN");
@@ -36,17 +33,13 @@ export async function registerGuest(
   const idempotencyKey = idempotencyKeySchema.parse(rawIdempotencyKey);
 
   const result = await db.$transaction(
-    async (transaction) => {
-      const replay = await transaction.idempotencyRecord.findUnique({
-        where: {
-          scope_key: { scope: IDEMPOTENCY_SCOPE, key: idempotencyKey },
-        },
-      });
-      if (replay?.responseJson) {
-        return registrationResultSchema.parse(replay.responseJson);
-      }
-
-      const settings = await transaction.weddingSettings.findUnique({
+    async (transaction) =>
+      withTransactionIdempotency(
+        transaction,
+        IDEMPOTENCY_SCOPE,
+        idempotencyKey,
+        async () => {
+          const settings = await transaction.weddingSettings.findUnique({
         where: { id: "default" },
       });
       if (!settings?.registrationOpen) {
@@ -159,9 +152,6 @@ export async function registerGuest(
       const safeAuditPayload: Prisma.InputJsonObject = {
         attendanceNumber: guest.attendanceNumber,
         relation: guest.relation,
-        childCount: guest.childCount,
-        originProvince: guest.originProvince,
-        originCity: guest.originCity,
         isOutOfTown: guest.isOutOfTown,
         primaryGroupKey: guest.primaryGroup?.key ?? null,
         grouped,
@@ -180,18 +170,9 @@ export async function registerGuest(
           afterJson: safeAuditPayload,
         },
       });
-      await transaction.idempotencyRecord.create({
-        data: {
-          scope: IDEMPOTENCY_SCOPE,
-          key: idempotencyKey,
-          responseJson: result,
-          statusCode: 200,
-          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+          return result;
         },
-      });
-
-      return result;
-    },
+      ),
     { isolationLevel: "Serializable" },
   );
   publishLiveEvent({
