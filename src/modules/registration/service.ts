@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { evaluateGrouping } from "@/modules/grouping";
 import { loadActiveGroupingRules } from "@/modules/grouping/service";
+import { publishLiveEvent } from "@/modules/live/bus";
 import { normalizeGuestName } from "./normalize";
 import { registrationSchema, type RegistrationInput } from "./schema";
 
@@ -34,7 +35,7 @@ export async function registerGuest(
   const input = registrationSchema.parse(rawInput);
   const idempotencyKey = idempotencyKeySchema.parse(rawIdempotencyKey);
 
-  return db.$transaction(
+  const result = await db.$transaction(
     async (transaction) => {
       const replay = await transaction.idempotencyRecord.findUnique({
         where: {
@@ -193,6 +194,12 @@ export async function registerGuest(
     },
     { isolationLevel: "Serializable" },
   );
+  publishLiveEvent({
+    type: "guest.changed",
+    scope: "admin",
+    payload: { guestId: result.guestId, created: result.created },
+  });
+  return result;
 }
 
 export class RegistrationClosedError extends Error {

@@ -1,6 +1,7 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 
 import { db } from "@/lib/db";
+import { publishLiveEvent } from "@/modules/live/bus";
 import { evaluateGrouping } from "./engine";
 import { groupingRuleSchema, type GroupingRule } from "./rule-schema";
 
@@ -105,7 +106,7 @@ export async function previewRecalculation(
 export async function applyRecalculation(ruleSetId: string, actorId: string) {
   const version = parseRuleSetId(ruleSetId);
 
-  return db.$transaction(
+  const result = await db.$transaction(
     async (transaction) => {
       const [rules, guests, groups, tags] = await Promise.all([
         loadActiveGroupingRules(transaction, version),
@@ -171,4 +172,10 @@ export async function applyRecalculation(ruleSetId: string, actorId: string) {
     },
     { isolationLevel: "Serializable" },
   );
+  publishLiveEvent({
+    type: "grouping.changed",
+    scope: "admin",
+    payload: result,
+  });
+  return result;
 }

@@ -11,5 +11,5 @@ test("protects the admin dashboard and accepts the seeded administrator", async 
   await page.getByRole("button", { name: "进入后台" }).click();
 
   await expect(page).toHaveURL(/\/admin$/);
-  await expect(page.getByRole("heading", { name: /欢迎回来/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "婚礼现场概览" })).toBeVisible();
 });
