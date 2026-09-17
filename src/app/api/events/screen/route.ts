@@ -1,9 +1,12 @@
 import { liveEventBus } from "@/modules/live/bus";
 import { getScreenSnapshot } from "@/modules/live/snapshot";
+import { db } from "@/lib/db";
 
 const encoder = new TextEncoder();
 
 export async function GET(request: Request) {
+  await db.auditEvent.create({ data: { action: "screen.presence", entityType: "Screen" } });
+  liveEventBus.publish({ type: "screen.presence", scope: "admin", payload: { connectedAt: new Date().toISOString() } });
   const lastEventId = Number(request.headers.get("last-event-id") ?? 0);
   const replay = liveEventBus.replay("screen", Number.isFinite(lastEventId) ? lastEventId : 0);
   const stream = new ReadableStream({
