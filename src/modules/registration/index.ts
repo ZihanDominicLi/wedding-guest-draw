@@ -4,8 +4,3 @@ export {
   registrationSchema,
   type RegistrationInput,
 } from "./schema";
-export {
-  registerGuest,
-  RegistrationClosedError,
-  type RegistrationResult,
-} from "./service";
