@@ -14,7 +14,8 @@ test("filters guests and opens the focused guest editor", async ({ page }) => {
   const editButton = page.getByTitle("编辑宾客").first();
   if (await editButton.count()) {
     await editButton.click();
-    await expect(page.getByRole("heading", { name: "编辑宾客" })).toBeVisible();
-    await expect(page.getByLabel("锁定人工分组")).toBeVisible();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByRole("heading", { name: "编辑宾客" })).toBeVisible();
+    await expect(dialog.getByLabel("锁定人工分组")).toBeVisible();
   }
 });

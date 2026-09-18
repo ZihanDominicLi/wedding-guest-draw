@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { assertSameOrigin, CrossOriginRequestError } from "@/lib/csrf";
 
-const SESSION_COOKIE = "wedding-draw.session_token";
+const SESSION_COOKIES = [
+  "wedding-draw.session_token",
+  "__Secure-wedding-draw.session_token",
+] as const;
 
 export function proxy(request: NextRequest) {
   try {
@@ -19,7 +22,7 @@ export function proxy(request: NextRequest) {
   if (request.nextUrl.pathname === "/api/registration") {
     return NextResponse.next();
   }
-  if (request.cookies.has(SESSION_COOKIE)) {
+  if (SESSION_COOKIES.some((name) => request.cookies.has(name))) {
     return NextResponse.next();
   }
 

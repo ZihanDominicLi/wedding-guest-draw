@@ -13,7 +13,8 @@ test("shows wedding settings and the canonical registration QR", async ({ page }
     page.getByRole("heading", { name: "婚礼与登记设置" }),
   ).toBeVisible();
   await expect(page.locator(".qr-output canvas")).toBeVisible();
-  await expect(page.getByText("http://127.0.0.1:3000/join")).toBeVisible();
+  const registrationUrl = new URL("/join", process.env.BETTER_AUTH_URL!).toString();
+  await expect(page.getByText(registrationUrl)).toBeVisible();
   await page.screenshot({
     path: "test-results/settings-desktop.png",
     fullPage: true,
