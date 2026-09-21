@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useRef, useState } from "react";
-import { Lock, Pencil, Save, X } from "lucide-react";
+import { Lock, Pencil, Save, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 type GuestEditorProps = {
@@ -46,6 +46,21 @@ export function GuestEditor({ guest, groups }: GuestEditorProps) {
     router.refresh();
   }
 
+  async function remove() {
+    if (!window.confirm(`确定删除“${guest.name}”？这会同时删除该宾客的中奖记录和候选快照，不能撤销。`)) return;
+    setPending(true);
+    setError("");
+    const response = await fetch(`/api/admin/guests/${guest.id}`, { method: "DELETE" });
+    setPending(false);
+    if (!response.ok) {
+      const payload = await response.json();
+      setError(payload.error?.message ?? "删除失败");
+      return;
+    }
+    dialogRef.current?.close();
+    router.refresh();
+  }
+
   return (
     <>
       <button className="icon-button" type="button" title="编辑宾客" onClick={() => dialogRef.current?.showModal()}>
@@ -69,7 +84,10 @@ export function GuestEditor({ guest, groups }: GuestEditorProps) {
           <label className="check-row"><input name="groupLocked" type="checkbox" defaultChecked={guest.groupLocked} /><span><Lock size={15} />锁定人工分组</span></label>
           <label className="check-row"><input name="enabled" type="checkbox" defaultChecked={guest.enabled} /><span>允许参与抽奖</span></label>
           {error ? <p className="dialog-error" role="alert">{error}</p> : null}
-          <footer><button type="submit" disabled={pending}><Save size={17} />{pending ? "保存中" : "保存"}</button></footer>
+          <footer>
+            <button className="danger-button" type="button" onClick={remove} disabled={pending}><Trash2 size={17} />删除宾客</button>
+            <button type="submit" disabled={pending}><Save size={17} />{pending ? "保存中" : "保存"}</button>
+          </footer>
         </form>
       </dialog>
     </>

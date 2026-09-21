@@ -404,6 +404,13 @@ a {
   font-weight: 700;
 }
 
+.guest-dialog footer .danger-button {
+  margin-right: auto;
+  border: 1px solid var(--red);
+  color: var(--red);
+  background: transparent;
+}
+
 .dialog-error {
   margin: 0;
   color: var(--red);

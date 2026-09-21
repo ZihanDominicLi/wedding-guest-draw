@@ -83,6 +83,27 @@ export async function updateGuest(id: string, patch: GuestPatch, actorId: string
   });
 }
 
+export async function deleteGuest(id: string, actorId: string) {
+  return db.$transaction(async (transaction) => {
+    const guest = await transaction.guest.findUniqueOrThrow({ where: { id } });
+
+    await transaction.auditEvent.create({
+      data: {
+        actorId,
+        action: "guest.deleted",
+        entityType: "Guest",
+        entityId: id,
+        beforeJson: safeGuestAudit(guest),
+        reason: "管理员删除宾客及其测试抽奖记录",
+      },
+    });
+    await transaction.winner.deleteMany({ where: { guestId: id } });
+    await transaction.drawCandidateSnapshot.deleteMany({ where: { guestId: id } });
+    await transaction.guestTag.deleteMany({ where: { guestId: id } });
+    return transaction.guest.delete({ where: { id } });
+  });
+}
+
 export async function createCollisionGuest(
   rawInput: RegistrationInput,
   actorId: string,

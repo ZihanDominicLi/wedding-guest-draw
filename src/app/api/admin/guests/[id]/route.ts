@@ -3,7 +3,7 @@ import { ZodError, z } from "zod";
 
 import { requireAdmin, UnauthorizedError } from "@/lib/auth";
 import { ok, problem } from "@/lib/http";
-import { updateGuest } from "@/modules/guests/service";
+import { deleteGuest, updateGuest } from "@/modules/guests/service";
 
 const patchSchema = z.object({
   name: z.string().trim().min(1).max(40).optional(),
@@ -28,6 +28,21 @@ export async function PATCH(
   } catch (error) {
     if (error instanceof UnauthorizedError) return problem(401, "UNAUTHORIZED", "需要管理员登录");
     if (error instanceof ZodError) return problem(422, "INVALID_GUEST", "宾客信息无效");
+    throw error;
+  }
+}
+
+export async function DELETE(
+  request: Request,
+  context: { params: Promise<{ id: string }> },
+) {
+  try {
+    const administrator = await requireAdmin(request.headers);
+    const { id } = await context.params;
+    await deleteGuest(id, administrator.id);
+    return new Response(null, { status: 204 });
+  } catch (error) {
+    if (error instanceof UnauthorizedError) return problem(401, "UNAUTHORIZED", "需要管理员登录");
     throw error;
   }
 }
