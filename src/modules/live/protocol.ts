@@ -3,7 +3,9 @@ export type LiveEventType =
   | "grouping.changed"
   | "round.changed"
   | "screen.presence"
-  | "health.changed";
+  | "health.changed"
+  | "quiz.changed"
+  | "quiz.question";
 
 export type LiveScope = "admin" | "screen";
 
