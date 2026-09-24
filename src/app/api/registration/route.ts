@@ -6,6 +6,7 @@ import {
   registerGuest,
   RegistrationClosedError,
 } from "@/modules/registration/service";
+import { readParticipantToken, PARTICIPANT_TOKEN_COOKIE } from "@/modules/quiz/participant-token";
 
 export async function POST(request: Request) {
   const idempotencyKey = request.headers.get("idempotency-key");
@@ -21,8 +22,16 @@ export async function POST(request: Request) {
     const clientIp = request.headers.get("x-real-ip") ?? "unknown";
     // Venue Wi-Fi commonly puts hundreds of guests behind one public address.
     await consumeRateLimit(`registration:${clientIp}`, { limit: 600, windowSeconds: 300 });
-    const result = await registerGuest(await request.json(), idempotencyKey);
-    return ok(result);
+    const result = await registerGuest(await request.json(), idempotencyKey, readParticipantToken(request));
+    const { rawToken, ...quizAccess } = result.quizAccess;
+    const response = ok({ ...result, quizAccess });
+    if (rawToken) {
+      response.headers.append(
+        "Set-Cookie",
+        `${PARTICIPANT_TOKEN_COOKIE}=${encodeURIComponent(rawToken)}; Path=/; HttpOnly; SameSite=Lax${process.env.NODE_ENV === "production" ? "; Secure" : ""}`,
+      );
+    }
+    return response;
   } catch (error) {
     if (error instanceof RegistrationClosedError) {
       return problem(403, "REGISTRATION_CLOSED", "现场登记尚未开放");

@@ -32,4 +32,38 @@ describe("security boundaries", () => {
     expect(replay).toEqual(first);
     expect(executions).toBe(1);
   });
+
+  it("serializes a safe replay value and can rebuild a delivery-only value", async () => {
+    const first = await withIdempotency(
+      `${marker}:token-scope`,
+      "same-token-key",
+      async () => ({ guestId: "guest-1", rawToken: "secret-token" }),
+      {
+        serialize: (value) => ({ guestId: value.guestId }),
+        onReplay: async (stored) => ({
+          ...(stored as { guestId: string }),
+          rawToken: "rotated-token",
+        }),
+      },
+    );
+    const replay = await withIdempotency(
+      `${marker}:token-scope`,
+      "same-token-key",
+      async () => ({ guestId: "guest-2", rawToken: "wrong-token" }),
+      {
+        serialize: (value) => ({ guestId: value.guestId }),
+        onReplay: async (stored) => ({
+          ...(stored as { guestId: string }),
+          rawToken: "rotated-token",
+        }),
+      },
+    );
+
+    expect(first.rawToken).toBe("secret-token");
+    expect(replay).toEqual({ guestId: "guest-1", rawToken: "rotated-token" });
+    const persisted = await db.idempotencyRecord.findUnique({
+      where: { scope_key: { scope: `${marker}:token-scope`, key: "same-token-key" } },
+    });
+    expect(persisted?.responseJson).toEqual({ guestId: "guest-1" });
+  });
 });

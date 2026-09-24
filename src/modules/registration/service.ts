@@ -8,6 +8,7 @@ import { loadActiveGroupingRules } from "@/modules/grouping/service";
 import { publishLiveEvent } from "@/modules/live/bus";
 import { normalizeGuestName } from "./normalize";
 import { registrationSchema, type RegistrationInput } from "./schema";
+import { hashParticipantToken, issueParticipantToken } from "@/modules/quiz/participant-token";
 
 const IDEMPOTENCY_SCOPE = "public-registration";
 const idempotencyKeySchema = z.string().trim().min(8).max(128);
@@ -19,6 +20,11 @@ export type RegistrationResult = {
   primaryGroup: { key: string; name: string } | null;
   grouped: boolean;
   created: boolean;
+  quizAccess: {
+    available: boolean;
+    rawToken?: string;
+    sessionId?: string;
+  };
 };
 
 function normalizedLocation(value: string): string {
@@ -28,6 +34,7 @@ function normalizedLocation(value: string): string {
 export async function registerGuest(
   rawInput: RegistrationInput,
   rawIdempotencyKey: string,
+  existingQuizToken?: string | null,
 ): Promise<RegistrationResult> {
   const input = registrationSchema.parse(rawInput);
   const idempotencyKey = idempotencyKeySchema.parse(rawIdempotencyKey);
@@ -125,6 +132,36 @@ export async function registerGuest(
             include: { primaryGroup: true },
           });
 
+      const quizSession =
+        (await transaction.quizSession.findFirst({ where: { status: "LIVE" }, orderBy: { createdAt: "desc" } })) ??
+        (await transaction.quizSession.findFirst({ where: { status: "READY" }, orderBy: { createdAt: "desc" } }));
+      let quizAccess: RegistrationResult["quizAccess"] = { available: false };
+      if (quizSession) {
+        const participant = await transaction.quizParticipant.findUnique({
+          where: { sessionId_guestId: { sessionId: quizSession.id, guestId: guest.id } },
+        });
+        if (participant) {
+          const suppliedHash = existingQuizToken ? hashParticipantToken(existingQuizToken) : null;
+          if (suppliedHash === participant.tokenHash) {
+            quizAccess = { available: true, sessionId: quizSession.id };
+          } else {
+            const token = issueParticipantToken();
+            await transaction.quizParticipant.update({ where: { id: participant.id }, data: { tokenHash: token.tokenHash } });
+            quizAccess = { available: true, rawToken: token.rawToken, sessionId: quizSession.id };
+          }
+        } else {
+          const token = issueParticipantToken();
+          await transaction.quizParticipant.create({
+            data: {
+              sessionId: quizSession.id,
+              guestId: guest.id,
+              tokenHash: token.tokenHash,
+            },
+          });
+          quizAccess = { available: true, rawToken: token.rawToken, sessionId: quizSession.id };
+        }
+      }
+
       const matchingTags = grouping.tags.length
         ? await transaction.tag.findMany({
             where: { key: { in: grouping.tags }, enabled: true },
@@ -148,6 +185,7 @@ export async function registerGuest(
           : null,
         grouped,
         created: !existing,
+        quizAccess,
       };
       const safeAuditPayload: Prisma.InputJsonObject = {
         attendanceNumber: guest.attendanceNumber,
@@ -171,6 +209,33 @@ export async function registerGuest(
         },
       });
           return result;
+        },
+        {
+          serialize: (value) => ({
+            guestId: value.guestId,
+            attendanceNumber: value.attendanceNumber,
+            displayName: value.displayName,
+            primaryGroup: value.primaryGroup,
+            grouped: value.grouped,
+            created: value.created,
+            quizAccess: {
+              available: value.quizAccess.available,
+              sessionId: value.quizAccess.sessionId,
+            },
+          }),
+          onReplay: async (stored) => {
+            const safe = stored as RegistrationResult;
+            if (!safe.quizAccess.available || !safe.quizAccess.sessionId) return safe;
+            const participant = await transaction.quizParticipant.findUnique({
+              where: { sessionId_guestId: { sessionId: safe.quizAccess.sessionId, guestId: safe.guestId } },
+            });
+            if (!participant) return safe;
+            const suppliedHash = existingQuizToken ? hashParticipantToken(existingQuizToken) : null;
+            if (suppliedHash === participant.tokenHash) return safe;
+            const token = issueParticipantToken();
+            await transaction.quizParticipant.update({ where: { id: participant.id }, data: { tokenHash: token.tokenHash } });
+            return { ...safe, quizAccess: { ...safe.quizAccess, rawToken: token.rawToken } };
+          },
         },
       ),
     { isolationLevel: "Serializable" },
