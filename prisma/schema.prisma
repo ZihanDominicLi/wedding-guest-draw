@@ -36,6 +36,21 @@ enum WinnerStatus {
   REVOKED
 }
 
+enum QuizSessionStatus {
+  DRAFT
+  READY
+  LIVE
+  REVIEW
+  FINISHED
+  CANCELLED
+}
+
+enum QuizParticipantStatus {
+  ACTIVE
+  COMPLETED
+  DISQUALIFIED
+}
+
 model WeddingSettings {
   id                   String    @id @default("default")
   groomName            String    @default("")
@@ -165,6 +180,9 @@ model Guest {
   enabled                Boolean                 @default(true)
   checkedInAt            DateTime                @default(now())
   deviceHash             String?
+  quizScore              Int?
+  quizCompletedAt        DateTime?
+  quizSessionId          String?
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
   primaryGroup           Group?                  @relation(fields: [primaryGroupId], references: [id], onDelete: SetNull)
@@ -172,11 +190,97 @@ model Guest {
   tags                   GuestTag[]
   snapshots              DrawCandidateSnapshot[]
   winners                Winner[]
+  quizSession            QuizSession?            @relation("GuestQuizSession", fields: [quizSessionId], references: [id], onDelete: SetNull)
+  quizParticipants       QuizParticipant[]
 
   @@unique([normalizedName, phoneLast4, collisionDiscriminator], map: "Guest_public_identity_key")
   @@index([primaryGroupId, enabled])
   @@index([checkedInAt])
+  @@index([quizSessionId, quizScore])
   @@map("guest")
+}
+
+model QuizSession {
+  id                      String                 @id @default(uuid())
+  title                   String
+  status                  QuizSessionStatus     @default(DRAFT)
+  questionCount           Int                    @default(10)
+  defaultTimeLimitSeconds Int                    @default(30)
+  currentQuestionIndex    Int?
+  publishedAt             DateTime?
+  startedAt               DateTime?
+  finishedAt              DateTime?
+  cancelledAt             DateTime?
+  version                 Int                    @default(1)
+  createdAt               DateTime               @default(now())
+  updatedAt               DateTime               @updatedAt
+  questions               QuizQuestion[]
+  participants            QuizParticipant[]
+  guests                  Guest[]                @relation("GuestQuizSession")
+
+  @@index([status, createdAt])
+  @@map("quiz_session")
+}
+
+model QuizQuestion {
+  id                 String       @id @default(uuid())
+  sessionId          String
+  order              Int
+  prompt             String
+  options            Json
+  correctOption      Int
+  explanation        String?
+  timeLimitSeconds   Int?
+  enabled            Boolean      @default(true)
+  opensAt            DateTime?
+  closesAt           DateTime?
+  publishedAt        DateTime?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  session            QuizSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  answers            QuizAnswer[]
+
+  @@unique([sessionId, order])
+  @@index([sessionId, order])
+  @@map("quiz_question")
+}
+
+model QuizParticipant {
+  id            String                @id @default(uuid())
+  sessionId     String
+  guestId       String
+  tokenHash     String                @unique
+  status        QuizParticipantStatus @default(ACTIVE)
+  score         Int                   @default(0)
+  completedAt   DateTime?
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+  session       QuizSession           @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  guest         Guest                 @relation(fields: [guestId], references: [id], onDelete: Cascade)
+  answers       QuizAnswer[]
+
+  @@unique([sessionId, guestId])
+  @@index([guestId, status])
+  @@map("quiz_participant")
+}
+
+model QuizAnswer {
+  id             String          @id @default(uuid())
+  participantId  String
+  questionId     String
+  selectedOption Int?
+  isLate         Boolean         @default(false)
+  isCorrect      Boolean?
+  score          Int             @default(0)
+  submittedAt    DateTime        @default(now())
+  idempotencyKey String?
+  createdAt      DateTime        @default(now())
+  participant    QuizParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  question       QuizQuestion    @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([participantId, questionId])
+  @@index([questionId, submittedAt])
+  @@map("quiz_answer")
 }
 
 model GuestTag {
@@ -254,6 +358,10 @@ model DrawRound {
   publishedAt        DateTime?
   cancelledAt        DateTime?
   cancellationReason String?
+  scoreThreshold     Int?
+  scoreFallbackStep  Int?       @default(1)
+  actualScoreThreshold Int?
+  scoreFallbackCount  Int?
   createdAt          DateTime                @default(now())
   updatedAt          DateTime                @updatedAt
   prize              Prize                   @relation(fields: [prizeId], references: [id])

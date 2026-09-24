@@ -8,6 +8,8 @@ export type RoundResult = {
   status: DrawRoundStatus;
   version: number;
   candidateCount?: number;
+  scoreThreshold?: number | null;
+  actualScoreThreshold?: number | null;
   winners: Array<{
     id: string;
     guestId: string;
@@ -20,4 +22,6 @@ export type CreateRoundInput = {
   prizeId: string;
   targetGroupId: string;
   winnerCount: number;
+  scoreThreshold?: number;
+  scoreFallbackStep?: number;
 };
