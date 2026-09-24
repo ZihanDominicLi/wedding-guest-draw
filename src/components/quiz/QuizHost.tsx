@@ -1,0 +1,10 @@
+"use client";
+
+import { useState } from "react";
+
+type Session = { id: string; title: string; status: string; participantCount: number; currentQuestionIndex: number | null };
+export function QuizHost({ initialSessions }: { initialSessions: Session[] }) {
+  const [sessions, setSessions] = useState(initialSessions); const [message, setMessage] = useState(""); const [busy, setBusy] = useState(false);
+  async function call(id: string, action: string) { setBusy(true); setMessage(""); const response = await fetch(`/api/quiz/${id}/${action}`, { method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() } }); const payload = await response.json(); setBusy(false); if (!response.ok) return setMessage(payload.error?.message ?? "操作失败"); const next = payload.data.session ?? payload.data; setSessions((items) => items.map((item) => item.id === id ? { ...item, status: next.status, currentQuestionIndex: next.currentQuestionIndex ?? item.currentQuestionIndex } : item)); }
+  return <section className="admin-panel"><header><p className="admin-eyebrow">Quiz control</p><h1>现场同步答题</h1><a href="/quiz" target="_blank">打开宾客答题页</a></header>{sessions.length ? sessions.map((session) => <article key={session.id} className="admin-list-row"><div><strong>{session.title}</strong><span>{session.status} · {session.participantCount} 位参与者 · 第 {session.currentQuestionIndex ?? 0} 题</span></div><div>{["DRAFT", "READY"].includes(session.status) ? <button disabled={busy} onClick={() => void call(session.id, "start")}>开始答题</button> : null}{["LIVE", "REVIEW"].includes(session.status) ? <button disabled={busy} onClick={() => void call(session.id, "finish")}>结束并计分</button> : null}</div></article>) : <p>还没有答题场次，请通过 API 创建 10 道题的场次。</p>}{message ? <p role="alert">{message}</p> : null}</section>;
+}

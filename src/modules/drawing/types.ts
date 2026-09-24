@@ -10,6 +10,7 @@ export type RoundResult = {
   candidateCount?: number;
   scoreThreshold?: number | null;
   actualScoreThreshold?: number | null;
+  scoreFallbackCount?: number | null;
   winners: Array<{
     id: string;
     guestId: string;

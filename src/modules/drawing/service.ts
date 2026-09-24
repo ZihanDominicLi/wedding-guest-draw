@@ -85,6 +85,9 @@ function roundResult(
     plannedWinnerCount: number;
     status: RoundResult["status"];
     version: number;
+    scoreThreshold?: number | null;
+    actualScoreThreshold?: number | null;
+    scoreFallbackCount?: number | null;
   },
   winners: RoundResult["winners"] = [],
   candidateCount?: number,
@@ -96,6 +99,9 @@ function roundResult(
     winnerCount: round.plannedWinnerCount,
     status: round.status,
     version: round.version,
+    scoreThreshold: round.scoreThreshold,
+    actualScoreThreshold: round.actualScoreThreshold,
+    scoreFallbackCount: round.scoreFallbackCount,
     ...(candidateCount === undefined ? {} : { candidateCount }),
     winners,
   };
@@ -163,6 +169,8 @@ export async function createRound(
           targetGroupId: input.targetGroupId,
           plannedWinnerCount: input.winnerCount,
           operatorId: actorId,
+          scoreThreshold: input.scoreThreshold ?? null,
+          scoreFallbackStep: input.scoreFallbackStep ?? 1,
         },
       });
       const response = roundResult(round);
@@ -195,12 +203,25 @@ export async function lockRound(
           await transaction.auditEvent.create({ data: { actorId, action: "draw.backup_override", entityType: "DrawRound", entityId: roundId, reason: options.backupOverrideReason!.trim() } });
         }
       }
-      const candidates = await transaction.guest.findMany({
-        where: eligibleGuestWhere(round.targetGroupId),
+      const initialThreshold = round.scoreThreshold;
+      const fallbackStep = round.scoreFallbackStep ?? 1;
+      let actualThreshold = initialThreshold;
+      let fallbackCount = 0;
+      let candidates = await transaction.guest.findMany({
+        where: { ...eligibleGuestWhere(round.targetGroupId), ...(actualThreshold === null ? {} : { quizScore: { gte: actualThreshold } }) },
         select: { id: true, name: true, primaryGroup: { select: { name: true } } },
         orderBy: { attendanceNumber: "asc" },
       });
-      if (candidates.length < round.plannedWinnerCount) {
+      while (actualThreshold !== null && candidates.length < round.plannedWinnerCount && actualThreshold > 0) {
+        actualThreshold = Math.max(0, actualThreshold - fallbackStep);
+        fallbackCount += 1;
+        candidates = await transaction.guest.findMany({
+          where: { ...eligibleGuestWhere(round.targetGroupId), quizScore: { gte: actualThreshold } },
+          select: { id: true, name: true, primaryGroup: { select: { name: true } } },
+          orderBy: { attendanceNumber: "asc" },
+        });
+      }
+      if (candidates.length < round.plannedWinnerCount && candidates.length === 0) {
         throw new DrawingValidationError("Not enough eligible candidates");
       }
 
@@ -214,7 +235,7 @@ export async function lockRound(
       });
       const updated = await transaction.drawRound.update({
         where: { id: roundId },
-        data: { status: "LOCKED", lockedAt: new Date(), version: { increment: 1 } },
+        data: { status: "LOCKED", lockedAt: new Date(), actualScoreThreshold: actualThreshold, scoreFallbackCount: fallbackCount, version: { increment: 1 } },
       });
       const response = roundResult(updated, [], candidates.length);
       await appendRoundAudit(transaction, actorId, roundId, "draw.round_locked", asJson(response));
