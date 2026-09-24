@@ -134,3 +134,35 @@ export async function finishQuizSession(sessionId: string, actorId: string, idem
   publishLiveEvent({ type: "quiz.changed", scope: "admin", payload: result as unknown as Record<string, unknown> });
   return result;
 }
+
+export async function advanceQuizQuestion(sessionId: string, actorId: string, idempotencyKey: string) {
+  const result = await db.$transaction(async (transaction) => withTransactionIdempotency(transaction, `quiz:advance:${sessionId}`, idempotencyKey, async () => {
+    const session = await transaction.quizSession.findUnique({ where: { id: sessionId }, include: { questions: { orderBy: { order: "asc" } } } });
+    if (!session) throw new QuizValidationError("Quiz session not found");
+    assertStatus(session.status, ["LIVE"]);
+    const nextIndex = (session.currentQuestionIndex ?? 0) + 1;
+    const question = session.questions.find((item) => item.order === nextIndex);
+    if (!question) throw new QuizStateError("No more questions");
+    const now = new Date();
+    const updatedQuestion = await transaction.quizQuestion.update({ where: { id: question.id }, data: { opensAt: now, closesAt: new Date(now.getTime() + (question.timeLimitSeconds ?? session.defaultTimeLimitSeconds) * 1000), publishedAt: now } });
+    const updated = await transaction.quizSession.update({ where: { id: sessionId }, data: { currentQuestionIndex: nextIndex, version: { increment: 1 } } });
+    await transaction.auditEvent.create({ data: { actorId, action: "quiz.question_advanced", entityType: "QuizSession", entityId: sessionId, afterJson: json({ currentQuestionIndex: nextIndex }) } });
+    return { session: sessionView(updated), question: questionView(updatedQuestion, session.defaultTimeLimitSeconds) };
+  }));
+  publishLiveEvent({ type: "quiz.question", scope: "screen", payload: { sessionId, question: result.question } });
+  return result;
+}
+
+export async function revealQuizAnswer(sessionId: string, actorId: string, idempotencyKey: string) {
+  const result = await db.$transaction(async (transaction) => withTransactionIdempotency(transaction, `quiz:reveal:${sessionId}`, idempotencyKey, async () => {
+    const session = await transaction.quizSession.findUnique({ where: { id: sessionId }, include: { questions: true } });
+    if (!session || session.status !== "LIVE" || !session.currentQuestionIndex) throw new QuizStateError("Question is not live");
+    const question = session.questions.find((item) => item.order === session.currentQuestionIndex);
+    if (!question) throw new QuizStateError("Question not found");
+    await transaction.quizSession.update({ where: { id: sessionId }, data: { status: "REVIEW", version: { increment: 1 } } });
+    await transaction.auditEvent.create({ data: { actorId, action: "quiz.answer_revealed", entityType: "QuizQuestion", entityId: question.id, afterJson: json({ correctOption: question.correctOption }) } });
+    return { questionId: question.id, correctOption: question.correctOption, explanation: question.explanation };
+  }));
+  publishLiveEvent({ type: "quiz.answer", scope: "screen", payload: result });
+  return result;
+}

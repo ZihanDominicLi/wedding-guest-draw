@@ -5,7 +5,8 @@ export type LiveEventType =
   | "screen.presence"
   | "health.changed"
   | "quiz.changed"
-  | "quiz.question";
+  | "quiz.question"
+  | "quiz.answer";
 
 export type LiveScope = "admin" | "screen";
 

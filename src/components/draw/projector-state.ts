@@ -9,6 +9,7 @@ export type ScreenSnapshot = {
     screenTitle: string;
     screenBackgroundPath: string | null;
   };
+  quiz?: null | { id: string; status: "LIVE" | "REVIEW"; currentQuestionIndex: number | null; question: { id: string; order: number; prompt: string; options: unknown[]; closesAt: string | null; correctOption?: number; explanation?: string | null } | null };
   round: null | {
     id: string;
     status: "LOCKED" | "DRAWN" | "PUBLISHED";
@@ -31,6 +32,7 @@ export type ProjectorState = {
   groupName: string;
   candidates: string[];
   winners: PublicWinner[];
+  quiz: ScreenSnapshot["quiz"];
 };
 
 export function createProjectorState(
@@ -46,6 +48,7 @@ export function createProjectorState(
     groupName: "",
     candidates: [],
     winners: [],
+    quiz: null,
   };
 }
 
@@ -59,6 +62,7 @@ export function restoreProjectorState(
 
   return {
     settings: snapshot.settings,
+    quiz: snapshot.quiz,
     phase:
       round.status === "LOCKED"
         ? "rolling"

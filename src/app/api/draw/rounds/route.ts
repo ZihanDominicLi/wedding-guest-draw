@@ -10,6 +10,8 @@ const createSchema = z.object({
   prizeId: z.string().uuid(),
   targetGroupId: z.string().uuid(),
   winnerCount: z.number().int().positive().max(500),
+  scoreThreshold: z.number().int().min(0).max(10).optional(),
+  scoreFallbackStep: z.number().int().min(1).max(10).optional(),
 });
 
 export async function GET(request: Request) {
