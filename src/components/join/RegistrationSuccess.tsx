@@ -5,6 +5,7 @@ type RegistrationSuccessProps = {
     attendanceNumber: number;
     primaryGroup: { key: string; name: string } | null;
     created: boolean;
+    quizAccess?: { available: boolean; sessionId?: string };
   };
 };
 
@@ -19,6 +20,7 @@ export function RegistrationSuccess({ result }: RegistrationSuccessProps) {
         <div><dt>抽奖分组</dt><dd>{result.primaryGroup?.name ?? "待工作人员确认"}</dd></div>
         <div><dt>现场编号</dt><dd>#{String(result.attendanceNumber).padStart(3, "0")}</dd></div>
       </dl>
+      {result.quizAccess?.available ? <p className="quiz-ready">答题环节开始后，请留意现场大屏幕。</p> : null}
     </section>
   );
 }

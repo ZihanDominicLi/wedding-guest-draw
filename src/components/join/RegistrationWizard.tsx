@@ -22,6 +22,7 @@ type RegistrationResult = {
   primaryGroup: { key: string; name: string } | null;
   grouped: boolean;
   created: boolean;
+  quizAccess?: { available: boolean; sessionId?: string };
 };
 
 type RegistrationWizardProps = {
