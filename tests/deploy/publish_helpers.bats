@@ -42,4 +42,30 @@ printf 'change\n' >> "$dirty_dir/file"
 assert_status 1 require_clean_worktree "$dirty_dir"
 ALLOW_DIRTY=1 assert_status 0 require_clean_worktree "$dirty_dir"
 
+fake_bin=$(mktemp -d)
+fake_log="$fake_bin/commands.log"
+cat > "$fake_bin/docker" <<'FAKE_DOCKER'
+#!/usr/bin/env bash
+printf '%s\n' "docker $*" >> "$FAKE_LOG"
+case "${1:-}" in
+  info) exit 0 ;;
+  buildx) [[ "${2:-}" == "version" ]] && exit 0 ;;
+  build) [[ "${2:-}" == "--help" ]] && printf '%s\n' '--platform' && exit 0 ;;
+esac
+exit 0
+FAKE_DOCKER
+cat > "$fake_bin/ssh" <<'FAKE_SSH'
+#!/usr/bin/env bash
+printf '%s\n' "ssh $*" >> "$FAKE_LOG"
+cat >/dev/null
+exit 0
+FAKE_SSH
+chmod +x "$fake_bin/docker" "$fake_bin/ssh"
+FAKE_LOG="$fake_log" PATH="$fake_bin:/usr/bin:/bin" ALLOW_DIRTY=1 DEPLOY_HOST=test.invalid DEPLOY_USER=test DEPLOY_DIR=/tmp/wedding-test \
+  "$ROOT_DIR/deploy/publish.sh" dry-run >/dev/null
+if grep -Eq 'docker (build |save )' "$fake_log"; then
+  fail 'dry-run invoked image build or save'
+fi
+rm -rf "$fake_bin"
+
 printf 'PASS: publish helper contract\n'
