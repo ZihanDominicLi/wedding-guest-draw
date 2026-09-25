@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
 
 import { db } from "@/lib/db";
 import { withTransactionIdempotency } from "@/lib/idempotency";
@@ -93,6 +93,25 @@ export async function getQuizState(sessionId: string) {
   return { session: sessionView(session), question: current ? questionView(current, session.defaultTimeLimitSeconds) : null };
 }
 
+export async function getQuizSessionStats(sessionId: string) {
+  const session = await db.quizSession.findUnique({
+    where: { id: sessionId },
+    select: { currentQuestionIndex: true, questions: { select: { id: true, order: true } } },
+  });
+  if (!session) throw new QuizValidationError("Quiz session not found");
+  const current = session.currentQuestionIndex
+    ? session.questions.find((question) => question.order === session.currentQuestionIndex)
+    : null;
+  const [participantCount, completedCount, scoreAggregate, submittedCount, skippedCount] = await Promise.all([
+    db.quizParticipant.count({ where: { sessionId } }),
+    db.quizParticipant.count({ where: { sessionId, status: "COMPLETED" } }),
+    db.quizParticipant.aggregate({ where: { sessionId }, _avg: { score: true } }),
+    current ? db.quizAnswer.count({ where: { questionId: current.id, isLate: false } }) : Promise.resolve(0),
+    current ? db.quizAnswer.count({ where: { questionId: current.id, isLate: true } }) : Promise.resolve(0),
+  ]);
+  return { participantCount, submittedCount, skippedCount, completedCount, averageScore: scoreAggregate._avg.score ?? 0 };
+}
+
 async function participantForToken(transaction: Transaction, sessionId: string, token: string) {
   const participant = await transaction.quizParticipant.findFirst({ where: { sessionId, tokenHash: hashParticipantToken(token), guest: { enabled: true } }, include: { session: true } });
   if (!participant) throw new QuizParticipantError();
@@ -140,7 +159,8 @@ export async function getParticipantQuizState(sessionId: string, token: string) 
 
 export async function submitQuizAnswer(sessionId: string, token: string, questionId: string, selectedOption: number | null, idempotencyKey: string, now = new Date()) {
   if (selectedOption !== null && (!Number.isInteger(selectedOption) || selectedOption < 0)) throw new QuizValidationError("Invalid answer");
-  const result = await db.$transaction(async (transaction) => withTransactionIdempotency(transaction, `quiz:answer:${sessionId}:${questionId}`, idempotencyKey, async () => {
+  try {
+    const result = await db.$transaction(async (transaction) => withTransactionIdempotency(transaction, `quiz:answer:${sessionId}:${questionId}`, idempotencyKey, async () => {
     const participant = await participantForToken(transaction, sessionId, token);
     const question = await transaction.quizQuestion.findFirst({ where: { id: questionId, sessionId }, include: { session: true } });
     if (!question) throw new QuizValidationError("Question not found");
@@ -153,8 +173,15 @@ export async function submitQuizAnswer(sessionId: string, token: string, questio
     const answer = await transaction.quizAnswer.create({ data: { participantId: participant.id, questionId, selectedOption: late ? null : selectedOption, isLate: late, isCorrect: late || selectedOption === null ? null : selectedOption === question.correctOption, score: late || selectedOption === null ? 0 : selectedOption === question.correctOption ? 1 : 0, idempotencyKey } });
     if (!late && answer.score) await transaction.quizParticipant.update({ where: { id: participant.id }, data: { score: { increment: answer.score } } });
     return { accepted: !late, late, score: answer.score, questionId };
-  }, { serialize: (value) => value }));
-  return result;
+    }, { serialize: (value) => value }));
+    return result;
+  } catch (error) {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") throw error;
+    const participant = await db.quizParticipant.findFirst({ where: { sessionId, tokenHash: hashParticipantToken(token) } });
+    const existing = participant ? await db.quizAnswer.findUnique({ where: { participantId_questionId: { participantId: participant.id, questionId } } }) : null;
+    if (!existing) throw error;
+    return { accepted: !existing.isLate, late: existing.isLate, score: existing.score, questionId, duplicate: true };
+  }
 }
 
 export async function finishQuizSession(sessionId: string, actorId: string, idempotencyKey: string) {

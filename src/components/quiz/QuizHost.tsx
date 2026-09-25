@@ -3,7 +3,7 @@
 import { useState } from "react";
 
 type Question = { id: string; order: number; prompt: string; options: unknown; correctOption: number; explanation: string | null; timeLimitSeconds: number | null };
-type Session = { id: string; title: string; status: string; participantCount: number; currentQuestionIndex: number | null; defaultTimeLimitSeconds: number; questions: Question[] };
+type Session = { id: string; title: string; status: string; participantCount: number; submittedCount: number; skippedCount: number; completedCount: number; averageScore: number; currentQuestionIndex: number | null; defaultTimeLimitSeconds: number; questions: Question[] };
 export function QuizHost({ initialSessions }: { initialSessions: Session[] }) {
   const [sessions, setSessions] = useState(initialSessions);
   const [message, setMessage] = useState("");
@@ -28,7 +28,7 @@ export function QuizHost({ initialSessions }: { initialSessions: Session[] }) {
   return <section className="admin-panel"><header><p className="admin-eyebrow">Quiz control</p><h1>现场同步答题</h1><a href="/quiz" target="_blank" rel="noreferrer">打开宾客答题页</a></header>{sessions.length ? sessions.map((session) => {
     const current = session.currentQuestionIndex ? session.questions.find((q) => q.order === session.currentQuestionIndex) : null;
     const review = session.status === "REVIEW";
-    return <article key={session.id} className="admin-list-row"><div><strong>{session.title}</strong><span>{session.status} · {session.participantCount} 位参与者 · {current ? `第 ${current.order} 题` : "未开始"}</span></div><div className="quiz-host-actions">
+    return <article key={session.id} className="admin-list-row"><div><strong>{session.title}</strong><span>{session.status} · {session.participantCount} 位参与者 · 当前题提交 {session.submittedCount} · 跳过 {session.skippedCount} · 完成 {session.completedCount} · 平均 {session.averageScore.toFixed(1)} 分 · {current ? `第 ${current.order} 题` : "未开始"}</span></div><div className="quiz-host-actions">
       {session.status === "DRAFT" ? <><button disabled={Boolean(busy)} onClick={() => void call(session, "publish")}>发布场次</button><button disabled={Boolean(busy)} onClick={() => setEditing(editing === session.id ? null : session.id)}>编辑题目</button></> : null}
       {session.status === "READY" ? <button disabled={Boolean(busy)} onClick={() => void call(session, "start")}>开始第 1 题</button> : null}
       {session.status === "LIVE" ? <><button disabled={Boolean(busy)} onClick={() => void call(session, "close", { force: true })}>提前收卷</button><button disabled={Boolean(busy)} onClick={() => void call(session, "reveal")}>公布答案</button></> : null}
