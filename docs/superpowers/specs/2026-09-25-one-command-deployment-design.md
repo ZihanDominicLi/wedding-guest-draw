@@ -99,4 +99,3 @@ DEPLOY_COMPOSE_FILES=docker-compose.yml docker-compose.tunnel.yml
 - 远程 dry-run：只执行 SSH、Compose config 和镜像存在性检查，不重启服务。
 - 发布成功检查：`docker compose ps`、容器健康状态和 `/api/health` 均通过。
 - 失败演练：使用无效镜像标签验证应用回滚，不删除数据库卷。
-
