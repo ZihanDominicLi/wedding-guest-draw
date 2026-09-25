@@ -12,14 +12,9 @@ FROM base AS dependencies
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 
-FROM postgres:17-bookworm AS pgtools
-
 FROM base AS builder
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY . .
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends openssl ca-certificates \
-  && rm -rf /var/lib/apt/lists/*
 ENV DATABASE_URL=postgresql://build:build@127.0.0.1:5432/build
 ENV BETTER_AUTH_SECRET=build-only-secret-0123456789abcdef
 ENV BETTER_AUTH_URL=http://127.0.0.1:3000
@@ -28,14 +23,23 @@ ENV ADMIN_PASSWORD=build-only-password
 ENV WEDDING_DOMAIN=127.0.0.1
 RUN pnpm prisma generate && pnpm build
 
-FROM base AS runner
+FROM postgres:17-bookworm AS runner
 ENV NODE_ENV=production
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends postgresql-client ca-certificates \
-  && rm -rf /var/lib/apt/lists/*
-COPY --from=pgtools /usr/lib/postgresql/17/bin/pg_dump /usr/local/bin/pg_dump
-COPY --from=pgtools /usr/lib/postgresql/17/bin/pg_restore /usr/local/bin/pg_restore
-RUN pg_dump --version | grep "17\."
+ENV PNPM_HOME=/pnpm
+ENV COREPACK_HOME=/corepack
+ENV PATH=$PNPM_HOME:$PATH
+WORKDIR /app
+ENTRYPOINT []
+COPY --from=base /usr/local/bin/node /usr/local/bin/node
+COPY --from=base /usr/local/lib/node_modules /usr/local/lib/node_modules
+COPY --from=base /corepack /corepack
+RUN groupadd --gid 1000 node \
+  && useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash node \
+  && ln -s ../lib/node_modules/corepack/dist/corepack.js /usr/local/bin/corepack \
+  && ln -s ../lib/node_modules/corepack/dist/pnpm.js /usr/local/bin/pnpm \
+  && node --version \
+  && pnpm --version \
+  && pg_dump --version | grep "17\."
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
