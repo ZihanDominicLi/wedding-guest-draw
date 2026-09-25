@@ -109,7 +109,7 @@ export async function getQuizSessionStats(sessionId: string) {
     current ? db.quizAnswer.count({ where: { questionId: current.id, isLate: false } }) : Promise.resolve(0),
     current ? db.quizAnswer.count({ where: { questionId: current.id, isLate: true } }) : Promise.resolve(0),
   ]);
-  return { participantCount, submittedCount, skippedCount, completedCount, averageScore: scoreAggregate._avg.score ?? 0 };
+  return { id: sessionId, participantCount, submittedCount, skippedCount, completedCount, averageScore: scoreAggregate._avg.score ?? 0 };
 }
 
 async function participantForToken(transaction: Transaction, sessionId: string, token: string) {
@@ -174,6 +174,7 @@ export async function submitQuizAnswer(sessionId: string, token: string, questio
     if (!late && answer.score) await transaction.quizParticipant.update({ where: { id: participant.id }, data: { score: { increment: answer.score } } });
     return { accepted: !late, late, score: answer.score, questionId };
     }, { serialize: (value) => value }));
+    publishLiveEvent({ type: "quiz.changed", scope: "admin", payload: { id: sessionId, reason: "answer_submitted" } });
     return result;
   } catch (error) {
     if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") throw error;
@@ -219,6 +220,7 @@ export async function advanceQuizQuestion(sessionId: string, actorId: string, id
     return { session: sessionView(updated), question: questionView(updatedQuestion, session.defaultTimeLimitSeconds) };
   }));
   publishLiveEvent({ type: "quiz.question_opened", scope: "screen", payload: { sessionId, question: result.question } });
+  publishLiveEvent({ type: "quiz.changed", scope: "admin", payload: result.session as unknown as Record<string, unknown> });
   return result;
 }
 
@@ -237,6 +239,7 @@ export async function revealQuizAnswer(sessionId: string, actorId: string, idemp
     return { session: sessionView(updatedSession), questionId: question.id, correctOption: question.correctOption, explanation: question.explanation };
   }));
   publishLiveEvent({ type: "quiz.answer_published", scope: "screen", payload: result });
+  publishLiveEvent({ type: "quiz.changed", scope: "admin", payload: result.session as unknown as Record<string, unknown> });
   return result;
 }
 
@@ -255,6 +258,7 @@ export async function closeQuizQuestion(sessionId: string, actorId: string, idem
     return { sessionId, questionId: question.id, closesAt: closesAt?.toISOString() ?? null };
   }));
   publishLiveEvent({ type: "quiz.question_closed", scope: "screen", payload: result });
+  publishLiveEvent({ type: "quiz.changed", scope: "admin", payload: { id: sessionId, reason: "question_closed" } });
   return result;
 }
 

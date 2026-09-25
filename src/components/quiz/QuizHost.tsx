@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+
+import { mergeQuizSessionStats, type QuizSessionStats } from "@/modules/quiz/admin-state";
 
 type Question = { id: string; order: number; prompt: string; options: unknown; correctOption: number; explanation: string | null; timeLimitSeconds: number | null };
 type Session = { id: string; title: string; status: string; participantCount: number; submittedCount: number; skippedCount: number; completedCount: number; averageScore: number; currentQuestionIndex: number | null; defaultTimeLimitSeconds: number; questions: Question[] };
@@ -9,6 +11,48 @@ export function QuizHost({ initialSessions }: { initialSessions: Session[] }) {
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
+  useEffect(() => {
+    let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+    let closed = false;
+    let events: EventSource | undefined;
+
+    const refreshSession = async (sessionId: string) => {
+      const response = await fetch(`/api/quiz/${encodeURIComponent(sessionId)}`, { cache: "no-store" });
+      if (!response.ok) return;
+      const payload = await response.json() as { data?: { session?: { status?: string; currentQuestionIndex?: number | null }; question?: Partial<Question> | null; stats?: QuizSessionStats } };
+      const next = payload.data;
+      if (!next?.session) return;
+      setSessions((items) => {
+        const updated = items.map((item) => item.id === sessionId ? {
+          ...item,
+          ...(next.session?.status ? { status: next.session.status } : {}),
+          ...(next.session?.currentQuestionIndex !== undefined ? { currentQuestionIndex: next.session.currentQuestionIndex } : {}),
+          ...(next.question ? { questions: item.questions.map((question) => question.id === next.question?.id ? { ...question, ...next.question } : question) } : {}),
+        } : item);
+        return next.stats ? mergeQuizSessionStats(updated, [next.stats]) : updated;
+      });
+    };
+
+    const connect = () => {
+      if (closed) return;
+      events = new EventSource("/api/events/admin");
+      events.addEventListener("quiz.changed", (event) => {
+        const payload = JSON.parse((event as MessageEvent).data) as { id?: string };
+        if (payload.id) void refreshSession(payload.id);
+      });
+      events.onerror = () => {
+        events?.close();
+        if (!closed) reconnectTimer = setTimeout(connect, 1500);
+      };
+    };
+
+    connect();
+    return () => {
+      closed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      events?.close();
+    };
+  }, []);
   async function call(session: Session, action: string, body: object = {}) {
     setBusy(`${session.id}:${action}`); setMessage("");
     const response = await fetch(`/api/quiz/${session.id}/${action}`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(body) });
