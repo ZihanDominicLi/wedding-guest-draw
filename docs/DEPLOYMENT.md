@@ -107,7 +107,7 @@ DEPLOY_DIR=/home/ubuntu/wedding-guest-draw \
 ./deploy/publish.sh dry-run
 ```
 
-服务器项目目录必须已经存在，并且包含由服务器自己维护的 `.env`。发布器不会创建、上传或修改这个文件。
+服务器项目目录必须已经存在，并且包含由服务器自己维护的 `.env`。发布器不会创建、上传或修改这个文件。发布器默认使用仓库中的 `docker-compose.yml`；如果服务器项目目录里存在 `docker-compose.tunnel.yml`，会自动把它加入 Compose 配置，不需要额外参数。
 
 ### 日常发布
 

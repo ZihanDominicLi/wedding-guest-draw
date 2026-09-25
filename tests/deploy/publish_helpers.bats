@@ -68,4 +68,30 @@ if grep -Eq 'docker (build |save )' "$fake_log"; then
 fi
 rm -rf "$fake_bin"
 
+no_builder_bin=$(mktemp -d)
+no_builder_log="$no_builder_bin/commands.log"
+cat > "$no_builder_bin/docker" <<'NO_BUILDER_DOCKER'
+#!/usr/bin/env bash
+printf '%s\n' "docker $*" >> "$FAKE_LOG"
+if [[ "${1:-}" == "info" ]]; then exit 0; fi
+if [[ "${1:-}" == "buildx" ]]; then exit 1; fi
+if [[ "${1:-}" == "build" && "${2:-}" == "--help" ]]; then printf '%s\n' 'docker build help'; exit 0; fi
+exit 0
+NO_BUILDER_DOCKER
+cat > "$no_builder_bin/ssh" <<'NO_BUILDER_SSH'
+#!/usr/bin/env bash
+printf '%s\n' "ssh $*" >> "$FAKE_LOG"
+cat >/dev/null
+exit 0
+NO_BUILDER_SSH
+chmod +x "$no_builder_bin/docker" "$no_builder_bin/ssh"
+if FAKE_LOG="$no_builder_log" PATH="$no_builder_bin:/usr/bin:/bin" ALLOW_DIRTY=1 \
+  "$ROOT_DIR/deploy/publish.sh" dry-run >/dev/null 2>&1; then
+  fail '没有跨平台构建能力时 dry-run 意外通过'
+fi
+if grep -q '^ssh ' "$no_builder_log" 2>/dev/null; then
+  fail '本地构建器预检失败后仍连接了服务器'
+fi
+rm -rf "$no_builder_bin"
+
 printf 'PASS: publish helper contract\n'

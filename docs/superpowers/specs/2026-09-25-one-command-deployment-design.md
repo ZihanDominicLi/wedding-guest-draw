@@ -45,7 +45,7 @@ DEPLOY_HOST=36.103.199.34
 DEPLOY_USER=ubuntu
 DEPLOY_DIR=/home/ubuntu/wedding-guest-draw
 DEPLOY_SSH_PORT=22
-DEPLOY_COMPOSE_FILES=docker-compose.yml docker-compose.tunnel.yml
+DEPLOY_COMPOSE_FILES=docker-compose.yml
 ```
 
 默认值写在脚本中，不写入密码和私钥。SSH 使用本机已有密钥或 SSH agent；脚本不接受密码参数，也不把密码写入日志。发布前脚本要求目标目录存在且包含 `.env`，首次安装仍使用单独的服务器初始化流程。
@@ -55,10 +55,10 @@ DEPLOY_COMPOSE_FILES=docker-compose.yml docker-compose.tunnel.yml
 ### 本地阶段
 
 1. 确认工作树没有未提交变更，或通过显式 `ALLOW_DIRTY=1` 允许发布当前工作树。
-2. 确认 Docker daemon 正常、构建器可用，并使用 `linux/amd64` 构建器。
+2. 确认 Docker daemon 正常，并确认 Docker Buildx 可用；若 Buildx 插件不可用但 Docker CLI 明确支持 `docker build --platform`，使用该兼容路径。
 3. 构建 `wedding-guest-draw-app:<release-id>`，其中 release id 使用当前 Git commit 短 SHA 和 UTC 时间组成。
 4. 用 `docker save` 输出镜像，并在内存流中 gzip；不在项目目录创建压缩包。
-5. 通过一次 SSH 会话将压缩流传输到服务器端发布脚本。
+5. 镜像本地构建和架构验证通过后，才连接服务器；通过 SSH 将压缩流传输到服务器端发布脚本。
 
 ### 服务器阶段
 

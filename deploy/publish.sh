@@ -10,7 +10,7 @@ DEPLOY_HOST=${DEPLOY_HOST:-36.103.199.34}
 DEPLOY_USER=${DEPLOY_USER:-ubuntu}
 DEPLOY_DIR=${DEPLOY_DIR:-/home/ubuntu/wedding-guest-draw}
 DEPLOY_SSH_PORT=${DEPLOY_SSH_PORT:-22}
-DEPLOY_COMPOSE_FILES=${DEPLOY_COMPOSE_FILES:-"docker-compose.yml docker-compose.tunnel.yml"}
+DEPLOY_COMPOSE_FILES=${DEPLOY_COMPOSE_FILES:-"docker-compose.yml"}
 HEALTH_TIMEOUT_SECONDS=${HEALTH_TIMEOUT_SECONDS:-180}
 KEEP_ROLLBACKS=${KEEP_ROLLBACKS:-3}
 APP_IMAGE=${APP_IMAGE:-wedding-guest-draw-app}
@@ -59,6 +59,12 @@ preflight_local() {
   fi
 }
 
+preflight_ssh() {
+  phase=local-ssh-preflight
+  need_command ssh
+  [[ -f "$SCRIPT_DIR/remote-publish.sh" ]] || die "缺少 deploy/remote-publish.sh"
+}
+
 install_remote_script() {
   phase=remote-preflight
   local env_command
@@ -85,8 +91,8 @@ publish() {
   release=$(release_id_from_git "$ROOT_DIR")
   validate_release_id "$release" || die "生成的 release id 不安全"
   printf '准备发布 %s 到 %s@%s:%s\n' "$release" "$DEPLOY_USER" "$DEPLOY_HOST" "$DEPLOY_DIR"
-  install_remote_script
   build_image "$release"
+  install_remote_script
   phase=image-transfer
   env_command=$(remote_env_command)
   image="$APP_IMAGE:$release"
@@ -103,7 +109,7 @@ dry_run() {
 }
 
 rollback() {
-  preflight_local
+  preflight_ssh
   install_remote_script
   phase=rollback
   ssh_command "$(remote_env_command) bash '$REMOTE_SCRIPT_PATH' rollback"

@@ -17,12 +17,13 @@
 - The server must not need to pull Node or the application image from Docker Hub during a publish.
 - Application rollback does not roll back Prisma migrations.
 - Default target is `ubuntu@36.103.199.34:/home/ubuntu/wedding-guest-draw` over SSH port `22`.
+- Default Compose input is the tracked `docker-compose.yml`; a server-local `docker-compose.tunnel.yml` is auto-detected and included.
 - Dirty worktrees require explicit `ALLOW_DIRTY=1`.
 - Logs must not print passwords, secrets, cookies, or private-key contents.
 
 ## Review Focus
 
-- Docker Desktop is running but Buildx is unavailable: the script must fail with a concrete installation/activation message before changing the server.
+- Docker Desktop is running but neither Buildx nor a `docker build --platform` fallback is available: the script must fail with a concrete installation/activation message before changing the server.
 - The server project directory is missing or lacks `.env`: the remote preflight must fail without loading an image or restarting services.
 - The new app image starts but never becomes healthy: the previous image must be restored and the failure logs retained.
 - A migration fails during startup: the publisher must return non-zero and must not claim a successful release.
@@ -83,7 +84,7 @@
 - Modify: `deploy/publish_helpers.bash`
 
 **Interfaces:**
-- `publish.sh` calls `docker buildx build --platform linux/amd64 --load -t wedding-guest-draw-app:<release-id> .`.
+- `publish.sh` calls `docker buildx build --platform linux/amd64 --load -t wedding-guest-draw-app:<release-id> .`, or the verified `docker build --platform` fallback when Buildx is unavailable but the CLI exposes that flag.
 - The image stream is `docker save wedding-guest-draw-app:<release-id> | gzip -c | ssh ... 'bash -s -- receive <release-id>'`.
 - `dry-run` only invokes remote preflight and Compose config checks; it does not build, load, or restart.
 

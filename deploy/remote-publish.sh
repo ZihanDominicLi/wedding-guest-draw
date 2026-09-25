@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 DEPLOY_DIR=${DEPLOY_DIR:-/home/ubuntu/wedding-guest-draw}
-DEPLOY_COMPOSE_FILES=${DEPLOY_COMPOSE_FILES:-"docker-compose.yml docker-compose.tunnel.yml"}
+DEPLOY_COMPOSE_FILES=${DEPLOY_COMPOSE_FILES:-"docker-compose.yml"}
 HEALTH_TIMEOUT_SECONDS=${HEALTH_TIMEOUT_SECONDS:-180}
 KEEP_ROLLBACKS=${KEEP_ROLLBACKS:-3}
 APP_IMAGE=${APP_IMAGE:-wedding-guest-draw-app}
@@ -26,6 +26,9 @@ preflight() {
   phase=preflight
   [[ -d "$DEPLOY_DIR" ]] || die "项目目录不存在：$DEPLOY_DIR"
   [[ -f "$DEPLOY_DIR/.env" ]] || die "服务器缺少 .env，拒绝继续"
+  if [[ "$DEPLOY_COMPOSE_FILES" == "docker-compose.yml" && -f "$DEPLOY_DIR/docker-compose.tunnel.yml" ]]; then
+    DEPLOY_COMPOSE_FILES="docker-compose.yml docker-compose.tunnel.yml"
+  fi
   local file
   for file in $DEPLOY_COMPOSE_FILES; do
     [[ -f "$DEPLOY_DIR/$file" ]] || die "服务器缺少 Compose 文件：$file"
@@ -68,10 +71,13 @@ show_failure_logs() { compose logs --tail=120 app >&2 || true; }
 restore_previous() {
   if (( previous_exists )); then
     docker tag "$APP_IMAGE:$previous_tag" "$APP_IMAGE:latest"
-    compose up -d --no-build --force-recreate app >/dev/null
+    compose up -d --no-build --force-recreate app >/dev/null || return 1
+    wait_for_health || return 1
     printf '已恢复应用镜像：%s\n' "$previous_tag" >&2
+    return 0
   else
     printf '没有可用的旧应用镜像，保留当前失败容器供排查。\n' >&2
+    return 1
   fi
 }
 activate() {
@@ -85,13 +91,13 @@ activate() {
   docker tag "$APP_IMAGE:$release" "$APP_IMAGE:latest"
   if ! compose up -d --no-build --force-recreate app; then
     show_failure_logs
-    restore_previous || true
+    restore_previous || { printf '自动回滚失败，请立即检查 app 容器和备份。\n' >&2; return 1; }
     return 1
   fi
   phase=health-check
   if ! wait_for_health; then
     show_failure_logs
-    restore_previous || true
+    restore_previous || { printf '自动回滚失败，请立即检查 app 容器和备份。\n' >&2; return 1; }
     return 1
   fi
   docker image rm "$APP_IMAGE:$release" >/dev/null 2>&1 || true
