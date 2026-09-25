@@ -21,6 +21,7 @@ ENV BETTER_AUTH_URL=http://127.0.0.1:3000
 ENV ADMIN_EMAIL=build@example.com
 ENV ADMIN_PASSWORD=build-only-password
 ENV WEDDING_DOMAIN=127.0.0.1
+ENV PRISMA_CLI_BINARY_TARGETS=debian-openssl-3.0.x
 RUN pnpm prisma generate && pnpm build
 
 FROM postgres:17-bookworm AS runner
