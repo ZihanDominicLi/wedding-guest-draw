@@ -30,12 +30,14 @@ pnpm dev
 
 服务器只需 Docker、已解析到该服务器公网 IP 的域名，以及开放 TCP 80/443 和 UDP 443。完整步骤见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)，现场彩排清单见 [docs/REHEARSAL.md](docs/REHEARSAL.md)。
 
+首次部署和服务器环境配置见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)。完成首次配置后，日常更新只需在项目根目录运行：
+
 ```bash
-cp .env.example .env
-# 修改 .env 中所有 replace-with 和域名
-docker compose up -d --build
-docker compose ps
+./deploy/publish.sh dry-run
+./deploy/publish.sh
 ```
+
+发布器在本地构建 `linux/amd64` 镜像，通过 SSH 传输到服务器，保留服务器 `.env` 和所有 Docker 数据卷；失败时自动恢复上一个应用镜像。
 
 数据库没有宿主端口映射；上传、数据库与备份分别保存在 Docker 持久卷中。
 

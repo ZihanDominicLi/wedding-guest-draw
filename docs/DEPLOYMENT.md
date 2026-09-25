@@ -80,15 +80,69 @@ docker compose start app
 
 正式抽奖模式要求 30 分钟内有成功备份。若紧急覆盖，必须填写原因，系统会永久写入审计记录。
 
-## 5. 更新与回滚
+## 5. 一键更新与回滚
 
-更新前先在后台完成备份：
+### 首次配置
+
+发布器在你的 Mac 上构建 `linux/amd64` 应用镜像，再通过 SSH 传给服务器。服务器不需要访问 Docker Hub，也不会接收本地 `.env`。
+
+确认 Mac 已启动 Docker Desktop，并且可以免密码登录服务器：
 
 ```bash
-git pull --ff-only
-docker compose build app
-docker compose up -d app
-docker compose ps
+ssh -p 22 ubuntu@36.103.199.34
 ```
 
-回滚应用代码不会自动回滚数据库 migration。数据库结构变化时应恢复对应备份，而不是手工删除 migration 表。
+第一次使用时，在项目根目录执行：
+
+```bash
+chmod +x deploy/*.sh
+```
+
+如果服务器地址、用户名或项目目录不同，可以在命令前覆盖默认值：
+
+```bash
+DEPLOY_HOST=36.103.199.34 \
+DEPLOY_USER=ubuntu \
+DEPLOY_DIR=/home/ubuntu/wedding-guest-draw \
+./deploy/publish.sh dry-run
+```
+
+服务器项目目录必须已经存在，并且包含由服务器自己维护的 `.env`。发布器不会创建、上传或修改这个文件。
+
+### 日常发布
+
+代码提交到当前分支后，在项目根目录运行：
+
+```bash
+./deploy/publish.sh dry-run
+./deploy/publish.sh
+```
+
+`dry-run` 只检查本地 Docker、SSH、服务器 `.env`、Compose 文件和 Compose 配置，不构建镜像、不执行迁移、不重启容器。正式发布会自动：
+
+1. 构建当前代码的 `linux/amd64` 镜像。
+2. 将镜像压缩后通过 SSH 传输。
+3. 在服务器加载镜像，执行已有 Prisma migration 和幂等 seed。
+4. 只重建 `app` 服务，数据库、备份、Caddy 和 Cloudflare Tunnel 保持运行。
+5. 等待 `/api/health` 返回成功。
+6. 健康检查失败时恢复上一个应用镜像。
+
+发布器只使用服务器上的 `.env` 和 Docker 持久卷，不会清空数据库、上传文件或备份。
+
+### 回滚
+
+如果新版本启动失败，发布器会自动回滚。需要手动恢复最近一次成功的应用镜像时运行：
+
+```bash
+./deploy/publish.sh rollback
+```
+
+回滚只切换应用镜像，不回滚 Prisma migration。数据库结构变更必须向前兼容；需要恢复数据库时，按上一节的备份恢复流程操作，不要手工删除 migration 记录。
+
+### 常见错误
+
+- `Docker daemon 未运行`：先启动 Docker Desktop。
+- `当前 Docker 不支持跨平台构建`：升级 Docker Desktop，确认 `docker buildx version` 或 `docker build --help` 中有 `--platform`。
+- `Permission denied (publickey)`：先单独运行 `ssh ubuntu@36.103.199.34`，配置 SSH key 后再发布。
+- `服务器缺少 .env`：在服务器项目目录创建并填写 `.env`，不要把它提交到 Git。
+- `健康检查超时`：查看服务器上的 `docker compose ... logs --tail=120 app`；应用失败时旧镜像会自动恢复。
