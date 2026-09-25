@@ -71,8 +71,14 @@ show_failure_logs() { compose logs --tail=120 app >&2 || true; }
 restore_previous() {
   if (( previous_exists )); then
     docker tag "$APP_IMAGE:$previous_tag" "$APP_IMAGE:latest"
-    compose up -d --no-build --force-recreate app >/dev/null || return 1
-    wait_for_health || return 1
+    if ! compose up -d --no-build --force-recreate app >/dev/null; then
+      show_failure_logs
+      return 1
+    fi
+    if ! wait_for_health; then
+      show_failure_logs
+      return 1
+    fi
     printf '已恢复应用镜像：%s\n' "$previous_tag" >&2
     return 0
   else

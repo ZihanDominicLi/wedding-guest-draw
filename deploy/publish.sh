@@ -56,9 +56,7 @@ preflight_local() {
   [[ -f "$SCRIPT_DIR/remote-publish.sh" ]] || die "缺少 deploy/remote-publish.sh"
   require_clean_worktree "$ROOT_DIR"
   docker info >/dev/null 2>&1 || die "Docker daemon 未运行，请先启动 Docker Desktop"
-  if ! docker buildx version >/dev/null 2>&1 && ! docker build --help 2>/dev/null | grep -q -- '--platform'; then
-    die "当前 Docker 不支持跨平台构建；请启动 Docker Desktop 或启用 Buildx"
-  fi
+  docker buildx version >/dev/null 2>&1 || die "当前 Docker 不支持 Buildx；请启动 Docker Desktop 或启用 Buildx"
 }
 
 preflight_ssh() {
@@ -92,11 +90,7 @@ build_image() {
   phase=image-build
   local release=$1
   local build_status=0
-  if docker buildx version >/dev/null 2>&1; then
-    docker buildx build --platform linux/amd64 -t "$APP_IMAGE:$release" --load "$ROOT_DIR" || build_status=$?
-  else
-    docker build --platform linux/amd64 -t "$APP_IMAGE:$release" "$ROOT_DIR" || build_status=$?
-  fi
+  docker buildx build --platform linux/amd64 -t "$APP_IMAGE:$release" --load "$ROOT_DIR" || build_status=$?
   if (( build_status != 0 )); then
     if [[ "$ALLOW_CACHED_IMAGE" != "1" ]]; then
       return "$build_status"
