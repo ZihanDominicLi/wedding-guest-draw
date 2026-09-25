@@ -112,7 +112,7 @@ receive() {
   phase=image-load
   temp_dir=$(mktemp -d /tmp/wedding-guest-draw-release.XXXXXX)
   archive="$temp_dir/release.tar.$codec"
-  trap 'rm -rf "$temp_dir"' EXIT
+  trap 'rm -rf "${temp_dir:-}"' EXIT
   cat > "$archive" || die "镜像传输中断"
   if [[ "$codec" == "zstd" ]]; then
     command -v zstd >/dev/null 2>&1 || die "服务器缺少 zstd"
