@@ -63,7 +63,7 @@ install_remote_script() {
   phase=remote-preflight
   local env_command
   env_command=$(remote_env_command)
-  cat "$SCRIPT_DIR/remote-publish.sh" | ssh_command "mkdir -p \"$DEPLOY_DIR\" /tmp && cat > '$REMOTE_SCRIPT_PATH' && chmod 700 '$REMOTE_SCRIPT_PATH' && $env_command bash '$REMOTE_SCRIPT_PATH' preflight"
+  cat "$SCRIPT_DIR/remote-publish.sh" | ssh_command "cat > '$REMOTE_SCRIPT_PATH' && chmod 700 '$REMOTE_SCRIPT_PATH' && $env_command bash '$REMOTE_SCRIPT_PATH' preflight"
 }
 
 build_image() {
