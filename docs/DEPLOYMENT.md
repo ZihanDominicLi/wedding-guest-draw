@@ -84,7 +84,7 @@ docker compose start app
 
 ### 首次配置
 
-发布器在你的 Mac 上构建 `linux/amd64` 应用镜像，再通过 SSH 传给服务器。服务器不需要访问 Docker Hub，也不会接收本地 `.env`。
+发布器在你的 Mac 上构建 `linux/amd64` 应用镜像，再通过 SSH 传给服务器；本机和服务器都支持时会优先使用 zstd 压缩。服务器不需要访问 Docker Hub，也不会接收本地 `.env`。
 
 确认 Mac 已启动 Docker Desktop，并且可以免密码登录服务器：
 

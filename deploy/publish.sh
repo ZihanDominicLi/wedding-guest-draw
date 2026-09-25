@@ -15,6 +15,7 @@ HEALTH_TIMEOUT_SECONDS=${HEALTH_TIMEOUT_SECONDS:-180}
 KEEP_ROLLBACKS=${KEEP_ROLLBACKS:-3}
 APP_IMAGE=${APP_IMAGE:-wedding-guest-draw-app}
 ALLOW_CACHED_IMAGE=${ALLOW_CACHED_IMAGE:-0}
+ARCHIVE_CODEC=${ARCHIVE_CODEC:-auto}
 REMOTE_SCRIPT_PATH=/tmp/wedding-guest-draw-remote-publish.sh
 
 phase=initialization
@@ -73,6 +74,20 @@ install_remote_script() {
   cat "$SCRIPT_DIR/remote-publish.sh" | ssh_command "cat > '$REMOTE_SCRIPT_PATH' && chmod 700 '$REMOTE_SCRIPT_PATH' && $env_command bash '$REMOTE_SCRIPT_PATH' preflight"
 }
 
+choose_codec() {
+  case "$ARCHIVE_CODEC" in
+    gzip|zstd) printf '%s\n' "$ARCHIVE_CODEC" ;;
+    auto)
+      if command -v zstd >/dev/null 2>&1 && ssh_command 'command -v zstd >/dev/null 2>&1'; then
+        printf 'zstd\n'
+      else
+        printf 'gzip\n'
+      fi
+      ;;
+    *) die "ARCHIVE_CODEC 只能是 auto、zstd 或 gzip" ;;
+  esac
+}
+
 build_image() {
   phase=image-build
   local release=$1
@@ -97,7 +112,7 @@ build_image() {
 
 publish() {
   preflight_local
-  local release image env_command
+  local release image env_command codec
   release=$(release_id_from_git "$ROOT_DIR")
   validate_release_id "$release" || die "生成的 release id 不安全"
   printf '准备发布 %s 到 %s@%s:%s\n' "$release" "$DEPLOY_USER" "$DEPLOY_HOST" "$DEPLOY_DIR"
@@ -105,8 +120,14 @@ publish() {
   install_remote_script
   phase=image-transfer
   env_command=$(remote_env_command)
+  codec=$(choose_codec)
   image="$APP_IMAGE:$release"
-  docker save "$image" | gzip -c | ssh_command "$env_command bash '$REMOTE_SCRIPT_PATH' receive '$release'"
+  printf '使用 %s 压缩传输镜像。\n' "$codec"
+  if [[ "$codec" == "zstd" ]]; then
+    docker save "$image" | zstd -T0 -3 -q | ssh_command "$env_command bash '$REMOTE_SCRIPT_PATH' receive '$release' zstd"
+  else
+    docker save "$image" | gzip -1 | ssh_command "$env_command bash '$REMOTE_SCRIPT_PATH' receive '$release' gzip"
+  fi
   phase=complete
   printf '发布成功：%s\n' "$release"
 }

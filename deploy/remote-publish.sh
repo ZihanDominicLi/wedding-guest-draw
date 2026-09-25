@@ -104,17 +104,24 @@ activate() {
   cleanup_rollbacks
 }
 receive() {
-  local release=$1 temp_dir archive
+  local release=$1 codec=$2 temp_dir archive
   validate_release_id() { [[ "$1" =~ ^[a-zA-Z0-9._-]+$ ]]; }
   validate_release_id "$release" || die "release id 不安全"
+  [[ "$codec" == "gzip" || "$codec" == "zstd" ]] || die "不支持的压缩格式"
   preflight
   phase=image-load
   temp_dir=$(mktemp -d /tmp/wedding-guest-draw-release.XXXXXX)
-  archive="$temp_dir/release.tar.gz"
+  archive="$temp_dir/release.tar.$codec"
   trap 'rm -rf "$temp_dir"' EXIT
   cat > "$archive" || die "镜像传输中断"
-  gzip -t "$archive" || die "镜像压缩包损坏"
-  docker load -i "$archive" >/dev/null
+  if [[ "$codec" == "zstd" ]]; then
+    command -v zstd >/dev/null 2>&1 || die "服务器缺少 zstd"
+    zstd -t "$archive" || die "zstd 镜像压缩包损坏"
+    zstd -d -c "$archive" | docker load >/dev/null
+  else
+    gzip -t "$archive" || die "gzip 镜像压缩包损坏"
+    gzip -d -c "$archive" | docker load >/dev/null
+  fi
   docker image inspect "$APP_IMAGE:$release" >/dev/null 2>&1 || die "加载后找不到镜像 $APP_IMAGE:$release"
   activate "$release" || exit 1
   phase=complete
@@ -134,7 +141,7 @@ rollback() {
 
 case "${1:-}" in
   preflight) preflight ;;
-  receive) [[ $# -eq 2 ]] || die 'receive 需要 release id'; receive "$2" ;;
+  receive) [[ $# -eq 3 ]] || die 'receive 需要 release id 和压缩格式'; receive "$2" "$3" ;;
   rollback) rollback ;;
-  *) die '用法：preflight|receive <release-id>|rollback' ;;
+  *) die '用法：preflight|receive <release-id> <gzip|zstd>|rollback' ;;
 esac
