@@ -146,3 +146,11 @@ DEPLOY_DIR=/home/ubuntu/wedding-guest-draw \
 - `Permission denied (publickey)`：先单独运行 `ssh ubuntu@36.103.199.34`，配置 SSH key 后再发布。
 - `服务器缺少 .env`：在服务器项目目录创建并填写 `.env`，不要把它提交到 Git。
 - `健康检查超时`：查看服务器上的 `docker compose ... logs --tail=120 app`；应用失败时旧镜像会自动恢复。
+
+如果 Docker Hub 暂时无法访问，普通发布会在本地构建阶段安全停止。只有在确认本机的 `wedding-guest-draw-app:latest` 就是要发布的版本时，才可显式复用缓存镜像：
+
+```bash
+ALLOW_CACHED_IMAGE=1 ./deploy/publish.sh
+```
+
+该开关不会自动使用旧镜像；它只在重新构建失败时生效，并且会再次检查缓存镜像必须是 `linux/amd64`。

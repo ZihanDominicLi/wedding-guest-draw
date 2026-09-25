@@ -14,6 +14,7 @@ DEPLOY_COMPOSE_FILES=${DEPLOY_COMPOSE_FILES:-"docker-compose.yml"}
 HEALTH_TIMEOUT_SECONDS=${HEALTH_TIMEOUT_SECONDS:-180}
 KEEP_ROLLBACKS=${KEEP_ROLLBACKS:-3}
 APP_IMAGE=${APP_IMAGE:-wedding-guest-draw-app}
+ALLOW_CACHED_IMAGE=${ALLOW_CACHED_IMAGE:-0}
 REMOTE_SCRIPT_PATH=/tmp/wedding-guest-draw-remote-publish.sh
 
 phase=initialization
@@ -75,10 +76,19 @@ install_remote_script() {
 build_image() {
   phase=image-build
   local release=$1
+  local build_status=0
   if docker buildx version >/dev/null 2>&1; then
-    docker buildx build --platform linux/amd64 -t "$APP_IMAGE:$release" --load "$ROOT_DIR"
+    docker buildx build --platform linux/amd64 -t "$APP_IMAGE:$release" --load "$ROOT_DIR" || build_status=$?
   else
-    docker build --platform linux/amd64 -t "$APP_IMAGE:$release" "$ROOT_DIR"
+    docker build --platform linux/amd64 -t "$APP_IMAGE:$release" "$ROOT_DIR" || build_status=$?
+  fi
+  if (( build_status != 0 )); then
+    if [[ "$ALLOW_CACHED_IMAGE" != "1" ]]; then
+      return "$build_status"
+    fi
+    printf '警告：本地构建失败，ALLOW_CACHED_IMAGE=1，将复用现有 %s:latest。\n' "$APP_IMAGE" >&2
+    docker image inspect "$APP_IMAGE:latest" --format '{{.Architecture}}' | grep -qx amd64 || die "现有缓存镜像不是 linux/amd64"
+    docker tag "$APP_IMAGE:latest" "$APP_IMAGE:$release"
   fi
   local architecture
   architecture=$(docker image inspect "$APP_IMAGE:$release" --format '{{.Architecture}}')

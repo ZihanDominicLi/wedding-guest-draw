@@ -13,6 +13,7 @@ grep -q -- '--no-build' "$ROOT_DIR/deploy/remote-publish.sh" || fail '远端发�
 grep -q -- '/api/health' "$ROOT_DIR/deploy/remote-publish.sh" || fail '远端发布缺少健康检查'
 grep -q -- 'compose config --quiet' "$ROOT_DIR/deploy/remote-publish.sh" || fail '远端发布缺少 Compose 预检'
 grep -q -- 'docker image rm' "$ROOT_DIR/deploy/remote-publish.sh" || fail '远端发布缺少旧回滚镜像清理'
+grep -q -- 'ALLOW_CACHED_IMAGE' "$ROOT_DIR/deploy/publish.sh" || fail '发布器缺少显式缓存镜像应急开关'
 if grep -q -- 'mkdir.*DEPLOY_DIR' "$ROOT_DIR/deploy/publish.sh"; then
   fail '本地发布器会创建缺失的服务器项目目录'
 fi
