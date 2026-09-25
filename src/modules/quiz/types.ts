@@ -9,6 +9,8 @@ export type QuizQuestionView = {
   opensAt: string | null;
   closesAt: string | null;
   publishedAt: string | null;
+  correctOption?: number;
+  explanation?: string | null;
 };
 
 export type QuizSessionView = {
@@ -28,6 +30,18 @@ export type QuizParticipantView = {
   status: QuizParticipantStatus;
   score: number;
   completedAt: string | null;
+  currentAnswer: {
+    questionId: string;
+    selectedOption: number | null;
+    accepted: boolean;
+    isLate: boolean;
+    isCorrect: boolean | null;
+    score: number;
+    submittedAt: string;
+    published: boolean;
+    correctOption?: number;
+    explanation?: string | null;
+  } | null;
 };
 
 export class QuizValidationError extends Error {

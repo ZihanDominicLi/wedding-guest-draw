@@ -208,7 +208,7 @@ export async function lockRound(
       let actualThreshold = initialThreshold;
       let fallbackCount = 0;
       let candidates = await transaction.guest.findMany({
-        where: { ...eligibleGuestWhere(round.targetGroupId), ...(actualThreshold === null ? {} : { quizScore: { gte: actualThreshold } }) },
+        where: eligibleGuestWhere(round.targetGroupId, actualThreshold),
         select: { id: true, name: true, primaryGroup: { select: { name: true } } },
         orderBy: { attendanceNumber: "asc" },
       });
@@ -216,14 +216,15 @@ export async function lockRound(
         actualThreshold = Math.max(0, actualThreshold - fallbackStep);
         fallbackCount += 1;
         candidates = await transaction.guest.findMany({
-          where: { ...eligibleGuestWhere(round.targetGroupId), quizScore: { gte: actualThreshold } },
+          where: eligibleGuestWhere(round.targetGroupId, actualThreshold),
           select: { id: true, name: true, primaryGroup: { select: { name: true } } },
           orderBy: { attendanceNumber: "asc" },
         });
       }
-      if (candidates.length < round.plannedWinnerCount && candidates.length === 0) {
+      if (candidates.length === 0) {
         throw new DrawingValidationError("Not enough eligible candidates");
       }
+      const actualWinnerCount = Math.min(round.plannedWinnerCount, candidates.length);
 
       await transaction.drawCandidateSnapshot.createMany({
         data: candidates.map((candidate) => ({
@@ -235,10 +236,10 @@ export async function lockRound(
       });
       const updated = await transaction.drawRound.update({
         where: { id: roundId },
-        data: { status: "LOCKED", lockedAt: new Date(), actualScoreThreshold: actualThreshold, scoreFallbackCount: fallbackCount, version: { increment: 1 } },
+        data: { status: "LOCKED", lockedAt: new Date(), plannedWinnerCount: actualWinnerCount, actualScoreThreshold: actualThreshold, scoreFallbackCount: fallbackCount, version: { increment: 1 } },
       });
       const response = roundResult(updated, [], candidates.length);
-      await appendRoundAudit(transaction, actorId, roundId, "draw.round_locked", asJson(response));
+      await appendRoundAudit(transaction, actorId, roundId, "draw.round_locked", asJson(response), actualWinnerCount < round.plannedWinnerCount ? "候选人不足，中奖名额已调整为实际候选人数" : undefined);
       return response;
     }),
   );

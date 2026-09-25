@@ -6,7 +6,11 @@ export type LiveEventType =
   | "health.changed"
   | "quiz.changed"
   | "quiz.question"
-  | "quiz.answer";
+  | "quiz.answer"
+  | "quiz.question_opened"
+  | "quiz.question_closed"
+  | "quiz.answer_published"
+  | "quiz.finished";
 
 export type LiveScope = "admin" | "screen";
 

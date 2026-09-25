@@ -9,7 +9,7 @@ export type ScreenSnapshot = {
     screenTitle: string;
     screenBackgroundPath: string | null;
   };
-  quiz?: null | { id: string; status: "LIVE" | "REVIEW"; currentQuestionIndex: number | null; question: { id: string; order: number; prompt: string; options: unknown[]; closesAt: string | null; correctOption?: number; explanation?: string | null } | null };
+  quiz?: null | { id: string; status: "LIVE" | "REVIEW" | "FINISHED"; currentQuestionIndex: number | null; question: { id: string; order: number; prompt: string; options: unknown[]; closesAt: string | null; correctOption?: number; explanation?: string | null } | null };
   round: null | {
     id: string;
     status: "LOCKED" | "DRAWN" | "PUBLISHED";
@@ -57,7 +57,9 @@ export function restoreProjectorState(
   snapshot: ScreenSnapshot,
 ): ProjectorState {
   const round = snapshot.round;
-  if (!round) return createProjectorState(snapshot.settings);
+  if (!round) {
+    return { ...createProjectorState(snapshot.settings), quiz: snapshot.quiz ?? null };
+  }
   if (current.roundId === round.id && current.version > round.version) return current;
 
   return {

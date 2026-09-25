@@ -16,7 +16,7 @@ export default async function GuestsPage({ searchParams }: { searchParams: Promi
   }
   const params = await searchParams;
   const [result, groups] = await Promise.all([
-    listGuests({ query: params.query, primaryGroupKey: params.group, exception: params.exception === "true", page: Number(params.page) || 1 }),
+    listGuests({ query: params.query, primaryGroupKey: params.group, exception: params.exception === "true", quizCompleted: params.quizCompleted === undefined ? undefined : params.quizCompleted === "true", quizMinScore: params.quizMinScore === undefined ? undefined : Number(params.quizMinScore), quizMaxScore: params.quizMaxScore === undefined ? undefined : Number(params.quizMaxScore), page: Number(params.page) || 1 }),
     db.group.findMany({ where: { enabled: true }, orderBy: { sortOrder: "asc" } }),
   ]);
 
@@ -34,12 +34,15 @@ export default async function GuestsPage({ searchParams }: { searchParams: Promi
         <label><span className="sr-only">搜索宾客</span><input name="query" defaultValue={params.query} placeholder="搜索姓名" /></label>
         <label><span className="sr-only">主组筛选</span><select name="group" defaultValue={params.group ?? ""}><option value="">全部主组</option>{groups.map((group) => <option key={group.id} value={group.key}>{group.name}</option>)}</select></label>
         <label className="filter-check"><input name="exception" type="checkbox" value="true" defaultChecked={params.exception === "true"} />仅看未分组</label>
+        <label><span className="sr-only">答题状态</span><select name="quizCompleted" defaultValue={params.quizCompleted ?? ""}><option value="">全部答题状态</option><option value="true">已完成答题</option><option value="false">未完成答题</option></select></label>
+        <label><span className="sr-only">最低答题分数</span><input name="quizMinScore" type="number" min="0" max="10" defaultValue={params.quizMinScore} placeholder="最低分" /></label>
+        <label><span className="sr-only">最高答题分数</span><input name="quizMaxScore" type="number" min="0" max="10" defaultValue={params.quizMaxScore} placeholder="最高分" /></label>
         <button type="submit"><Filter size={16} />筛选</button>
       </form>
       <div className="list-summary"><strong>{result.total}</strong><span>位成人宾客</span></div>
       <GuestTable
         groups={groups.map(({ id, name }) => ({ id, name }))}
-        items={result.items.map((guest) => ({ ...guest, checkedInAt: guest.checkedInAt.toISOString() }))}
+        items={result.items.map((guest) => ({ ...guest, checkedInAt: guest.checkedInAt.toISOString(), quizCompletedAt: guest.quizCompletedAt?.toISOString() ?? null }))}
       />
     </main>
   );

@@ -15,6 +15,9 @@ export type GuestListQuery = {
   tagKey?: string;
   enabled?: boolean;
   exception?: boolean;
+  quizCompleted?: boolean;
+  quizMinScore?: number;
+  quizMaxScore?: number;
   page?: number;
   pageSize?: number;
 };
@@ -32,6 +35,8 @@ export async function listGuests(query: GuestListQuery) {
     ...(query.tagKey ? { tags: { some: { tag: { key: query.tagKey } } } } : {}),
     ...(query.enabled === undefined ? {} : { enabled: query.enabled }),
     ...(query.exception ? { primaryGroupId: null } : {}),
+    ...(query.quizCompleted === undefined ? {} : query.quizCompleted ? { quizCompletedAt: { not: null } } : { quizCompletedAt: null }),
+    ...(query.quizMinScore === undefined && query.quizMaxScore === undefined ? {} : { quizScore: { ...(query.quizMinScore === undefined ? {} : { gte: query.quizMinScore }), ...(query.quizMaxScore === undefined ? {} : { lte: query.quizMaxScore }) } }),
   };
   const [items, total] = await Promise.all([
     db.guest.findMany({

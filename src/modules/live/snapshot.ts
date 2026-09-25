@@ -36,7 +36,7 @@ export async function getAdminSnapshot() {
 }
 
 export async function getScreenSnapshot() {
-  const quiz = await db.quizSession.findFirst({ where: { status: { in: ["LIVE", "REVIEW"] } }, orderBy: { updatedAt: "desc" } });
+  const quiz = await db.quizSession.findFirst({ where: { status: { in: ["LIVE", "REVIEW", "FINISHED"] } }, orderBy: { updatedAt: "desc" } });
   const quizQuestion = quiz?.currentQuestionIndex ? await db.quizQuestion.findUnique({ where: { sessionId_order: { sessionId: quiz.id, order: quiz.currentQuestionIndex } } }) : null;
   const round = await db.drawRound.findFirst({
     where: { status: { in: ["LOCKED", "DRAWN", "PUBLISHED"] } },
@@ -64,7 +64,7 @@ export async function getScreenSnapshot() {
         prompt: quizQuestion.prompt,
         options: quizQuestion.options,
         closesAt: quizQuestion.closesAt?.toISOString() ?? null,
-        ...(quiz.status === "REVIEW" ? { correctOption: quizQuestion.correctOption, explanation: quizQuestion.explanation } : {}),
+        ...(quiz.status === "REVIEW" || quiz.status === "FINISHED" ? { correctOption: quizQuestion.correctOption, explanation: quizQuestion.explanation } : {}),
       } : null,
     } : null,
     round: round

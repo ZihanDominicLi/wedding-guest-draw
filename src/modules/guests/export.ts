@@ -6,6 +6,9 @@ type ExportGuest = {
   originProvince: string;
   originCity: string;
   enabled: boolean;
+  quizScore: number | null;
+  quizCompletedAt: Date | null;
+  quizSessionId: string | null;
   primaryGroup: { name: string } | null;
   tags: Array<{ tag: { name: string } }>;
   createdAt: Date;
@@ -19,7 +22,7 @@ function csvCell(value: unknown): string {
 
 export function buildGuestCsv(guests: ExportGuest[]): string {
   const rows = [
-    ["现场编号", "姓名", "关系", "儿童人数", "出发省份", "出发城市", "主组", "标签", "抽奖资格", "登记时间", "更新时间"],
+    ["现场编号", "姓名", "关系", "儿童人数", "出发省份", "出发城市", "主组", "标签", "抽奖资格", "答题分数", "答题完成时间", "答题场次", "登记时间", "更新时间"],
     ...guests.map((guest) => [
       guest.attendanceNumber,
       guest.name,
@@ -30,6 +33,9 @@ export function buildGuestCsv(guests: ExportGuest[]): string {
       guest.primaryGroup?.name ?? "未分组",
       guest.tags.map(({ tag }) => tag.name).join("、"),
       guest.enabled && guest.primaryGroup ? "可参与" : "不可参与",
+      guest.quizScore ?? "",
+      guest.quizCompletedAt?.toISOString() ?? "",
+      guest.quizSessionId ?? "",
       guest.createdAt.toISOString(),
       guest.updatedAt.toISOString(),
     ]),

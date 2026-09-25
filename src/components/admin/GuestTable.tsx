@@ -16,6 +16,8 @@ type GuestRow = {
   groupLocked: boolean;
   enabled: boolean;
   checkedInAt: string;
+  quizScore: number | null;
+  quizCompletedAt: string | null;
 };
 
 export function GuestTable({ items, groups }: { items: GuestRow[]; groups: Array<{ id: string; name: string }> }) {
@@ -24,7 +26,7 @@ export function GuestTable({ items, groups }: { items: GuestRow[]; groups: Array
   return (
     <div className="table-scroll">
       <table className="guest-table">
-        <thead><tr><th>编号</th><th>宾客</th><th>关系</th><th>来源</th><th>主组 / 标签</th><th>状态</th><th><span className="sr-only">操作</span></th></tr></thead>
+        <thead><tr><th>编号</th><th>宾客</th><th>关系</th><th>来源</th><th>主组 / 标签</th><th>答题</th><th>状态</th><th><span className="sr-only">操作</span></th></tr></thead>
         <tbody>
           {items.map((guest) => (
             <tr key={guest.id}>
@@ -38,6 +40,7 @@ export function GuestTable({ items, groups }: { items: GuestRow[]; groups: Array
                 </span>
                 <div className="tag-line">{guest.tags.map(({ tag }) => <i key={tag.id} style={{ borderColor: tag.color }}>{tag.name}</i>)}</div>
               </td>
+              <td>{guest.quizCompletedAt ? <><strong>{guest.quizScore ?? 0} / 10</strong><small>已完成</small></> : <small>未完成</small>}</td>
               <td><span className={guest.enabled ? "status-on" : "status-off"}>{guest.enabled ? "可抽奖" : "已禁用"}</span>{guest.groupLocked ? <Lock size={14} aria-label="已锁组" /> : null}</td>
               <td><GuestEditor guest={guest} groups={groups} /></td>
             </tr>

@@ -63,6 +63,10 @@ export function ProjectorScene({ initialSnapshot }: { initialSnapshot: ScreenSna
     const events = new EventSource("/api/events/screen");
     events.addEventListener("snapshot", (event) => setState((current) => restoreProjectorState(current, JSON.parse((event as MessageEvent).data))));
     events.addEventListener("round.changed", refresh);
+    events.addEventListener("quiz.question_opened", refresh);
+    events.addEventListener("quiz.question_closed", refresh);
+    events.addEventListener("quiz.answer_published", refresh);
+    events.addEventListener("quiz.finished", refresh);
     return () => events.close();
   }, []);
 
@@ -87,7 +91,7 @@ export function ProjectorScene({ initialSnapshot }: { initialSnapshot: ScreenSna
           <span>{state.prizeName} · {state.groupName}</span>
         </section>
       ) : null}
-      {state.quiz?.question ? <section className="quiz-projector"><p>第 {state.quiz.question.order} 题</p><h2>{state.quiz.question.prompt}</h2><div>{state.quiz.question.options.map((option, index) => <span key={index}>{String(option)}</span>)}</div>{state.quiz.status === "REVIEW" && state.quiz.question.correctOption !== undefined ? <strong>答案：{String(state.quiz.question.options[state.quiz.question.correctOption])}</strong> : <small>请看主持人倒计时并完成作答</small>}</section> : null}
+      {state.quiz?.question ? <section className="quiz-projector"><p>第 {state.quiz.question.order} 题</p><h2>{state.quiz.question.prompt}</h2><div>{state.quiz.question.options.map((option, index) => <span key={index}>{String(option)}</span>)}</div>{["REVIEW", "FINISHED"].includes(state.quiz.status) && state.quiz.question.correctOption !== undefined ? <strong>答案：{String(state.quiz.question.options[state.quiz.question.correctOption])}</strong> : <small>请看主持人倒计时并完成作答</small>}</section> : null}
       <footer>{state.settings.screenBackgroundPath ? "" : "请在后台设置中上传婚礼背景照片"}</footer>
     </main>
   );

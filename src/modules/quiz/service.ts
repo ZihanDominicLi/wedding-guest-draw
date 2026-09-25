@@ -37,6 +37,10 @@ function questionView(question: {
   };
 }
 
+function optionCount(value: Prisma.JsonValue): number {
+  return Array.isArray(value) ? value.length : 0;
+}
+
 function assertStatus(status: string, allowed: string[]) {
   if (!allowed.includes(status)) throw new QuizStateError(`Quiz session is ${status}`);
 }
@@ -68,17 +72,17 @@ export async function startQuizSession(sessionId: string, actorId: string, idemp
   const result = await db.$transaction(async (transaction) => withTransactionIdempotency(transaction, `quiz:start:${sessionId}`, idempotencyKey, async () => {
     const session = await transaction.quizSession.findUnique({ where: { id: sessionId }, include: { questions: { orderBy: { order: "asc" } } } });
     if (!session) throw new QuizValidationError("Quiz session not found");
-    assertStatus(session.status, ["DRAFT", "READY"]);
+    assertStatus(session.status, ["READY"]);
     const now = new Date();
     const first = session.questions[0];
     if (!first) throw new QuizValidationError("Quiz has no questions");
-    const updatedQuestion = await transaction.quizQuestion.update({ where: { id: first.id }, data: { opensAt: now, closesAt: new Date(now.getTime() + (first.timeLimitSeconds ?? session.defaultTimeLimitSeconds) * 1000), publishedAt: now } });
+    const updatedQuestion = await transaction.quizQuestion.update({ where: { id: first.id }, data: { opensAt: now, closesAt: new Date(now.getTime() + (first.timeLimitSeconds ?? session.defaultTimeLimitSeconds) * 1000), publishedAt: null } });
     const updated = await transaction.quizSession.update({ where: { id: sessionId }, data: { status: "LIVE", startedAt: now, publishedAt: now, currentQuestionIndex: 1, version: { increment: 1 } } });
     await transaction.auditEvent.create({ data: { actorId, action: "quiz.session_started", entityType: "QuizSession", entityId: sessionId, afterJson: json({ currentQuestionIndex: 1 }) } });
     return { session: sessionView(updated), question: questionView(updatedQuestion, session.defaultTimeLimitSeconds) };
   }));
   publishLiveEvent({ type: "quiz.changed", scope: "admin", payload: result.session as unknown as Record<string, unknown> });
-  publishLiveEvent({ type: "quiz.question", scope: "screen", payload: { sessionId, question: result.question } });
+  publishLiveEvent({ type: "quiz.question_opened", scope: "screen", payload: { sessionId, question: result.question } });
   return result;
 }
 
@@ -95,11 +99,43 @@ async function participantForToken(transaction: Transaction, sessionId: string, 
   return participant;
 }
 
+async function recordSkippedAnswers(transaction: Transaction, sessionId: string, questionId: string) {
+  const participants = await transaction.quizParticipant.findMany({
+    where: { sessionId, status: "ACTIVE" },
+    select: { id: true },
+  });
+  if (!participants.length) return;
+  await transaction.quizAnswer.createMany({
+    data: participants.map((participant) => ({
+      participantId: participant.id, questionId, selectedOption: null, isLate: true,
+      isCorrect: null, score: 0,
+    })),
+    skipDuplicates: true,
+  });
+}
+
 export async function getParticipantQuizState(sessionId: string, token: string) {
   const participant = await db.quizParticipant.findFirst({ where: { sessionId, tokenHash: hashParticipantToken(token), guest: { enabled: true } }, include: { session: true } });
   if (!participant) throw new QuizParticipantError();
   const state = await getQuizState(sessionId);
-  return { ...state, participant: { id: participant.id, guestId: participant.guestId, status: participant.status, score: participant.score, completedAt: participant.completedAt?.toISOString() ?? null } satisfies QuizParticipantView };
+  const answer = state.question
+    ? await db.quizAnswer.findUnique({ where: { participantId_questionId: { participantId: participant.id, questionId: state.question.id } }, include: { question: true } })
+    : null;
+  const revealed = Boolean(answer && (state.session.status === "REVIEW" || state.session.status === "FINISHED") && answer.question.publishedAt);
+  return {
+    ...state,
+    question: state.question && revealed && answer ? { ...state.question, correctOption: answer.question.correctOption, explanation: answer.question.explanation } : state.question,
+    participant: {
+      id: participant.id, guestId: participant.guestId, status: participant.status, score: participant.score,
+      completedAt: participant.completedAt?.toISOString() ?? null,
+      currentAnswer: answer ? {
+        questionId: answer.questionId, selectedOption: answer.selectedOption, accepted: !answer.isLate,
+        isLate: answer.isLate, isCorrect: revealed ? answer.isCorrect : null, score: revealed ? answer.score : 0,
+        submittedAt: answer.submittedAt.toISOString(), published: revealed,
+        ...(revealed ? { correctOption: answer.question.correctOption, explanation: answer.question.explanation } : {}),
+      } : null,
+    } satisfies QuizParticipantView,
+  };
 }
 
 export async function submitQuizAnswer(sessionId: string, token: string, questionId: string, selectedOption: number | null, idempotencyKey: string, now = new Date()) {
@@ -110,6 +146,9 @@ export async function submitQuizAnswer(sessionId: string, token: string, questio
     if (!question) throw new QuizValidationError("Question not found");
     assertStatus(question.session.status, ["LIVE"]);
     if (question.session.currentQuestionIndex !== question.order) throw new QuizStateError("Question is not current");
+    if (selectedOption !== null && selectedOption >= optionCount(question.options)) throw new QuizValidationError("Invalid answer option");
+    const existing = await transaction.quizAnswer.findUnique({ where: { participantId_questionId: { participantId: participant.id, questionId } } });
+    if (existing) return { accepted: !existing.isLate, late: existing.isLate, score: existing.score, questionId, duplicate: true };
     const late = !question.opensAt || !question.closesAt || now < question.opensAt || now > question.closesAt;
     const answer = await transaction.quizAnswer.create({ data: { participantId: participant.id, questionId, selectedOption: late ? null : selectedOption, isLate: late, isCorrect: late || selectedOption === null ? null : selectedOption === question.correctOption, score: late || selectedOption === null ? 0 : selectedOption === question.correctOption ? 1 : 0, idempotencyKey } });
     if (!late && answer.score) await transaction.quizParticipant.update({ where: { id: participant.id }, data: { score: { increment: answer.score } } });
@@ -122,7 +161,7 @@ export async function finishQuizSession(sessionId: string, actorId: string, idem
   const result = await db.$transaction(async (transaction) => withTransactionIdempotency(transaction, `quiz:finish:${sessionId}`, idempotencyKey, async () => {
     const session = await transaction.quizSession.findUnique({ where: { id: sessionId } });
     if (!session) throw new QuizValidationError("Quiz session not found");
-    assertStatus(session.status, ["LIVE", "REVIEW"]);
+    assertStatus(session.status, ["REVIEW"]);
     const participants = await transaction.quizParticipant.findMany({ where: { sessionId, status: "ACTIVE" } });
     const now = new Date();
     await transaction.quizParticipant.updateMany({ where: { sessionId, status: "ACTIVE" }, data: { status: "COMPLETED", completedAt: now } });
@@ -131,6 +170,7 @@ export async function finishQuizSession(sessionId: string, actorId: string, idem
     await transaction.auditEvent.create({ data: { actorId, action: "quiz.session_finished", entityType: "QuizSession", entityId: sessionId, afterJson: json({ participantCount: participants.length }) } });
     return sessionView(updated);
   }));
+  publishLiveEvent({ type: "quiz.finished", scope: "screen", payload: result as unknown as Record<string, unknown> });
   publishLiveEvent({ type: "quiz.changed", scope: "admin", payload: result as unknown as Record<string, unknown> });
   return result;
 }
@@ -141,17 +181,17 @@ export async function advanceQuizQuestion(sessionId: string, actorId: string, id
     if (!session) throw new QuizValidationError("Quiz session not found");
     // After the host reveals an answer the session enters REVIEW. Advancing
     // from REVIEW is the normal transition to the next timed question.
-    assertStatus(session.status, ["LIVE", "REVIEW"]);
+    assertStatus(session.status, ["REVIEW"]);
     const nextIndex = (session.currentQuestionIndex ?? 0) + 1;
     const question = session.questions.find((item) => item.order === nextIndex);
     if (!question) throw new QuizStateError("No more questions");
     const now = new Date();
-    const updatedQuestion = await transaction.quizQuestion.update({ where: { id: question.id }, data: { opensAt: now, closesAt: new Date(now.getTime() + (question.timeLimitSeconds ?? session.defaultTimeLimitSeconds) * 1000), publishedAt: now } });
+    const updatedQuestion = await transaction.quizQuestion.update({ where: { id: question.id }, data: { opensAt: now, closesAt: new Date(now.getTime() + (question.timeLimitSeconds ?? session.defaultTimeLimitSeconds) * 1000), publishedAt: null } });
     const updated = await transaction.quizSession.update({ where: { id: sessionId }, data: { status: "LIVE", currentQuestionIndex: nextIndex, version: { increment: 1 } } });
     await transaction.auditEvent.create({ data: { actorId, action: "quiz.question_advanced", entityType: "QuizSession", entityId: sessionId, afterJson: json({ currentQuestionIndex: nextIndex }) } });
     return { session: sessionView(updated), question: questionView(updatedQuestion, session.defaultTimeLimitSeconds) };
   }));
-  publishLiveEvent({ type: "quiz.question", scope: "screen", payload: { sessionId, question: result.question } });
+  publishLiveEvent({ type: "quiz.question_opened", scope: "screen", payload: { sessionId, question: result.question } });
   return result;
 }
 
@@ -161,10 +201,46 @@ export async function revealQuizAnswer(sessionId: string, actorId: string, idemp
     if (!session || session.status !== "LIVE" || !session.currentQuestionIndex) throw new QuizStateError("Question is not live");
     const question = session.questions.find((item) => item.order === session.currentQuestionIndex);
     if (!question) throw new QuizStateError("Question not found");
-    await transaction.quizSession.update({ where: { id: sessionId }, data: { status: "REVIEW", version: { increment: 1 } } });
+    if (!question.closesAt || new Date() < question.closesAt) throw new QuizStateError("Question is still live; close it before publishing");
+    await recordSkippedAnswers(transaction, sessionId, question.id);
+    const publishedAt = new Date();
+    await transaction.quizQuestion.update({ where: { id: question.id }, data: { publishedAt } });
+    const updatedSession = await transaction.quizSession.update({ where: { id: sessionId }, data: { status: "REVIEW", version: { increment: 1 } } });
     await transaction.auditEvent.create({ data: { actorId, action: "quiz.answer_revealed", entityType: "QuizQuestion", entityId: question.id, afterJson: json({ correctOption: question.correctOption }) } });
-    return { questionId: question.id, correctOption: question.correctOption, explanation: question.explanation };
+    return { session: sessionView(updatedSession), questionId: question.id, correctOption: question.correctOption, explanation: question.explanation };
   }));
-  publishLiveEvent({ type: "quiz.answer", scope: "screen", payload: result });
+  publishLiveEvent({ type: "quiz.answer_published", scope: "screen", payload: result });
+  return result;
+}
+
+export async function closeQuizQuestion(sessionId: string, actorId: string, idempotencyKey: string, force = false) {
+  const result = await db.$transaction(async (transaction) => withTransactionIdempotency(transaction, `quiz:close:${sessionId}`, idempotencyKey, async () => {
+    const session = await transaction.quizSession.findUnique({ where: { id: sessionId }, include: { questions: true } });
+    if (!session || session.status !== "LIVE" || !session.currentQuestionIndex) throw new QuizStateError("Question is not live");
+    const question = session.questions.find((item) => item.order === session.currentQuestionIndex);
+    if (!question) throw new QuizStateError("Question not found");
+    const now = new Date();
+    if (!force && (!question.closesAt || now < question.closesAt)) throw new QuizStateError("Question is still live");
+    const closesAt = force && question.closesAt && now < question.closesAt ? now : question.closesAt;
+    if (closesAt && closesAt !== question.closesAt) await transaction.quizQuestion.update({ where: { id: question.id }, data: { closesAt } });
+    await recordSkippedAnswers(transaction, sessionId, question.id);
+    await transaction.auditEvent.create({ data: { actorId, action: "quiz.question_closed", entityType: "QuizQuestion", entityId: question.id, reason: force ? "管理员提前收卷" : "到达截止时间", afterJson: json({ questionOrder: question.order, closesAt: closesAt?.toISOString() ?? null }) } });
+    return { sessionId, questionId: question.id, closesAt: closesAt?.toISOString() ?? null };
+  }));
+  publishLiveEvent({ type: "quiz.question_closed", scope: "screen", payload: result });
+  return result;
+}
+
+export async function publishQuizSession(sessionId: string, actorId: string, idempotencyKey: string) {
+  const result = await db.$transaction(async (transaction) => withTransactionIdempotency(transaction, `quiz:publish-session:${sessionId}`, idempotencyKey, async () => {
+    const session = await transaction.quizSession.findUnique({ where: { id: sessionId }, include: { questions: true } });
+    if (!session) throw new QuizValidationError("Quiz session not found");
+    assertStatus(session.status, ["DRAFT"]);
+    if (session.questions.length !== 10) throw new QuizValidationError("A quiz must contain exactly 10 questions");
+    const updated = await transaction.quizSession.update({ where: { id: sessionId }, data: { status: "READY", publishedAt: new Date(), version: { increment: 1 } } });
+    await transaction.auditEvent.create({ data: { actorId, action: "quiz.session_published", entityType: "QuizSession", entityId: sessionId, afterJson: json({ questionCount: session.questions.length }) } });
+    return sessionView(updated);
+  }));
+  publishLiveEvent({ type: "quiz.changed", scope: "admin", payload: result as unknown as Record<string, unknown> });
   return result;
 }
