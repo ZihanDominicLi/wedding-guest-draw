@@ -10,4 +10,7 @@ export const defaultQuizQuestions: QuizDefinitionQuestion[] = [
   { prompt: "如果周末只能选择一件事，新人最可能选择什么？", options: ["骑车", "做饭", "打游戏", "看书"], correctOption: null },
   { prompt: "两个人是谁先主动的？", options: ["新郎", "新娘", "两个人一起", "到现在也没说清楚"], correctOption: null },
   { prompt: "两个人的领证时间距离哪个节气最近？", options: ["立夏", "小满", "芒种", "夏至"], correctOption: null },
+  { prompt: "新娘新郎养的两只猫叫什么名字？", options: ["来福和lucky", "莱福和lucky", "来福和luckin", "莱福和luckin"], correctOption: null },
+  { prompt: "新娘和新郎的生日分别在几月份？", options: ["3月和5月", "3月和7月", "3月和12月", "都在3月"], correctOption: null },
+  { prompt: "新娘和新郎的恋爱纪念日是？", options: ["7月1日", "8月1日", "9月1日", "10月1日"], correctOption: null },
 ];

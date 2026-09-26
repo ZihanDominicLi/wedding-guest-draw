@@ -2,7 +2,7 @@
 
 本文档给接手本项目的 agent 或开发者使用。文档记录当前代码、生产环境、已上线功能、未完成需求和安全发布方法。
 
-交接结论：当前公网版本可用于宾客登记、现场答题和抽奖；第 8–10 题以及“删除答题场次”仍未上线。接手者应先处理第 4 节列出的待办，再进行正式活动前彩排。
+交接结论：当前工作树已包含 10 题默认题目、答题场次删除和按中奖人数自动回退答题分数门槛。公网版本在本次发布前仍需按发布器完成一次 app-only 更新和健康检查；正式活动前仍应完成完整彩排。
 
 ## 1. 项目概况
 
@@ -39,7 +39,7 @@ git log --oneline -8
 - 服务器项目目录：`/home/ubuntu/wedding-guest-draw`
 - 公网域名：`https://wedding.slideforgeai.com`
 - 生产分支：服务器上通常不依赖 Git checkout，发布器通过 SSH 传输应用镜像。
-- 最新已发布版本：`release-3b46cf656d01-20260926120949`
+- 最新已发布版本以 `./deploy/publish.sh publish` 的输出为准；发布器只重建 app 容器。
 - 最新发布只重建了 `app` 容器，没有重建数据库、备份、Caddy 或 Cloudflare Tunnel。
 
 ### 代码导航
@@ -102,7 +102,7 @@ git log --oneline -8
 
 ### 3.3 答题分数参与抽奖
 
-答题完成后，宾客的 `quizScore` 和 `quizCompletedAt` 写回 `Guest`。抽奖规则可以设置最低答题分数；候选不足时按规则逐分回退，并记录实际门槛。
+答题完成后，宾客的 `quizScore` 和 `quizCompletedAt` 写回 `Guest`。抽奖后台默认使用“自动按中奖人数计算”：从 10 分开始，锁定候选名单时按目标组和本轮中奖人数逐分回退，直到名额满足或降到 0 分，并记录实际门槛、回退次数和候选快照。也可以切换为手动起始门槛或关闭成绩筛选。
 
 ### 3.4 上传背景图
 
@@ -162,9 +162,9 @@ ARCHIVE_CODEC=zstd ./deploy/publish.sh publish
 
 发布器不会删除 PostgreSQL、上传文件、备份、Caddy 或 Tunnel 数据卷。应用回滚不会回滚 Prisma migration。
 
-## 4. 当前明确未完成的用户需求
+## 4. 本次更新内容与发布确认
 
-以下两项是本次交接时仍未实现的需求，不能在交接时写成“已上线”。
+以下内容已在当前工作树实现；推送后需按发布器完成公网 app-only 更新，再验证生产环境。
 
 ### 4.1 增加第八至第十题
 
@@ -193,20 +193,15 @@ ARCHIVE_CODEC=zstd ./deploy/publish.sh publish
 
 正确答案没有在用户消息中指定。默认应把三题加入题目定义，但 `correctOption` 保持 `null`，然后在后台题目设置页选择正确答案。不能猜测正确答案。
 
-重要：目前 `src/modules/quiz/defaults.ts` 仍然是 7 道默认题，`tests/quiz/defaults.test.ts` 也仍断言 7 道题。修改默认题目只会影响以后新建的答题场次，不会自动给数据库中已经存在的 7 题场次增加题目。
+当前 `src/modules/quiz/defaults.ts` 已是 10 道默认题，三道新增题的正确答案保持为空，需在题目设置页选择。修改默认题目只影响以后新建的答题场次，不会自动给数据库中已经存在的场次追加题目。
 
-接手 agent 必须先确认用户想要：
-
-- 新建一场包含 10 题的答题场次；还是
-- 直接给服务器现有的某一个答题场次追加第 8–10 题。
-
-如果要支持后台追加题目，当前题目设置页还需要“添加题目”接口和按钮；不能只改默认数组。
+如果要给已有场次追加题目，当前题目设置页仍需要单独的数据变更；默认数组不会修改历史场次。
 
 ### 4.2 删除答题场次
 
 用户希望在 `/admin/quiz` 增加删除答题场次选项，主要用于测试清理。
 
-建议实现约束：
+已实现约束：
 
 - 只有管理员可调用。
 - 前端按钮必须有二次确认。
@@ -217,31 +212,26 @@ ARCHIVE_CODEC=zstd ./deploy/publish.sh publish
 - 删除前清理 `Guest.quizSessionId`、`Guest.quizScore`、`Guest.quizCompletedAt`，否则删除测试场次后宾客列表可能保留测试分数。
 - Prisma 关系中题目、参与者和答案对 `QuizSession` 使用级联删除；`Guest.quizSession` 使用 `SetNull`，但分数字段不会自动清空，因此必须显式清理宾客分数字段。
 
-建议接口：
+当前已实现接口：
 
 ```text
 DELETE /api/quiz/<session-id>
 ```
 
-建议代码位置：
+实现位置：
 
 - `src/modules/quiz/service.ts`：新增 `deleteQuizSession`。
 - `src/app/api/quiz/[id]/route.ts`：新增 `DELETE` handler。
 - `src/components/quiz/QuizHost.tsx`：增加删除按钮、确认和删除后移除列表项。
-- `tests/quiz/...`：覆盖状态保护、审计和宾客分数清理。
+- `tests/integration/quiz-session-deletion.test.ts`：覆盖状态保护、审计和宾客分数清理。
 
-## 5. 推荐接手实现顺序
+## 5. 发布与接手顺序
 
-1. 先确认是“新建 10 题场次”还是“修改现有 7 题场次”。
-2. 更新 `src/modules/quiz/defaults.ts`，加入第 8–10 题，三题 `correctOption: null`。
-3. 更新 `tests/quiz/defaults.test.ts`，断言总数为 10，并逐题断言新题文本和选项。
-4. 更新 `QuizCreateForm` 中“将创建 7 道草稿题目”的提示为 10 道。
-5. 如需修改已有场次，增加安全的后台“添加题目”能力，或通过后台题目 API 做一次性数据变更；不要直接猜正确答案。
-6. 实现删除答题场次 API、服务层事务、审计事件和后台确认按钮。
-7. 运行本地测试和类型检查。
-8. 提交并推送 GitHub。
-9. 使用 `ARCHIVE_CODEC=zstd ./deploy/publish.sh publish` 做 app-only 发布。
-10. 发布后验证健康接口、后台答题页和答题大屏。
+1. 确认 `git status -sb` 干净并运行本地验证命令。
+2. 推送 `codex/implementation` 分支。
+3. 使用 `ARCHIVE_CODEC=zstd ./deploy/publish.sh publish` 做 app-only 发布。
+4. 发布后验证健康接口、后台答题页、删除按钮、自动门槛和答题大屏。
+5. 正式活动前完成登记、10 题、刷新/断线、阈值回退、抽奖和导出彩排。
 
 ## 6. 本地验证命令
 
@@ -356,6 +346,6 @@ docker compose -p wedding-guest-draw \
 - [ ] 能运行 `./deploy/publish.sh dry-run`，但不会在未确认时直接发布。
 - [ ] 能登录生产后台，看到宾客、答题和抽奖入口。
 - [ ] 能确认生产健康检查返回 `status: ok` 和 `database: healthy`。
-- [ ] 能区分当前已上线的 7 题默认场次与待实现的 10 题需求。
-- [ ] 实现待办后，完成单元测试、构建、GitHub 推送和 app-only 发布。
+- [ ] 能区分新建的 10 题默认场次与历史场次题目不会自动追加。
+- [ ] 完成单元测试、构建、GitHub 推送和 app-only 发布。
 - [ ] 发布后保留数据库、上传、备份、Caddy 和 Cloudflare Tunnel 数据，不执行 `down -v`。

@@ -1123,6 +1123,14 @@ a {
   font-size: 0.72rem;
 }
 
+.draw-field-hint {
+  grid-column: 1 / -1;
+  margin: -4px 0 0;
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.6;
+}
+
 .draw-fields select,
 .draw-fields input {
   width: 100%;
@@ -2677,4 +2685,8 @@ a {
     align-items: start;
     flex-direction: column;
   }
+}
+.danger-action {
+  color: var(--red);
+  border-color: color-mix(in srgb, var(--red) 45%, transparent);
 }

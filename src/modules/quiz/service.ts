@@ -68,6 +68,31 @@ export async function createQuizSession(input: {
   return session;
 }
 
+export async function deleteQuizSession(sessionId: string, actorId: string) {
+  const deleted = await db.$transaction(async (transaction) => {
+    const session = await transaction.quizSession.findUnique({ where: { id: sessionId } });
+    if (!session) throw new QuizValidationError("Quiz session not found");
+    if (session.status === "LIVE") throw new QuizStateError("Live quiz sessions cannot be deleted");
+    await transaction.guest.updateMany({
+      where: { quizSessionId: sessionId },
+      data: { quizSessionId: null, quizScore: null, quizCompletedAt: null },
+    });
+    await transaction.auditEvent.create({
+      data: {
+        actorId,
+        action: "quiz.session_deleted",
+        entityType: "QuizSession",
+        entityId: sessionId,
+        afterJson: json({ title: session.title, status: session.status }),
+      },
+    });
+    await transaction.quizSession.delete({ where: { id: sessionId } });
+    return { id: sessionId, title: session.title };
+  });
+  publishLiveEvent({ type: "quiz.changed", scope: "admin", payload: { id: deleted.id, reason: "session_deleted" } });
+  return deleted;
+}
+
 export async function startQuizSession(sessionId: string, actorId: string, idempotencyKey: string) {
   const result = await db.$transaction(async (transaction) => withTransactionIdempotency(transaction, `quiz:start:${sessionId}`, idempotencyKey, async () => {
     const session = await transaction.quizSession.findUnique({ where: { id: sessionId }, include: { questions: { orderBy: { order: "asc" } } } });

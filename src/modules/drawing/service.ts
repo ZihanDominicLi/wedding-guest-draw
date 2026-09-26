@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { withTransactionIdempotency } from "@/lib/idempotency";
 import { publishLiveEvent } from "@/modules/live/bus";
 import { eligibleGuestWhere } from "./eligibility";
+import { resolveScoreThreshold } from "./score-threshold";
 import { sampleWithoutReplacement, type RandomInt } from "./random";
 import type { CreateRoundInput, RoundResult } from "./types";
 
@@ -205,21 +206,23 @@ export async function lockRound(
       }
       const initialThreshold = round.scoreThreshold;
       const fallbackStep = round.scoreFallbackStep ?? 1;
-      let actualThreshold = initialThreshold;
-      let fallbackCount = 0;
-      let candidates = await transaction.guest.findMany({
-        where: eligibleGuestWhere(round.targetGroupId, actualThreshold),
-        select: { id: true, name: true, primaryGroup: { select: { name: true } } },
+      const scoreFiltered = initialThreshold !== null;
+      const allEligible = await transaction.guest.findMany({
+        where: {
+          ...eligibleGuestWhere(round.targetGroupId, null),
+          ...(scoreFiltered ? { quizCompletedAt: { not: null }, quizScore: { not: null } } : {}),
+        },
+        select: { id: true, name: true, quizScore: true, primaryGroup: { select: { name: true } } },
         orderBy: { attendanceNumber: "asc" },
       });
-      while (actualThreshold !== null && candidates.length < round.plannedWinnerCount && actualThreshold > 0) {
-        actualThreshold = Math.max(0, actualThreshold - fallbackStep);
-        fallbackCount += 1;
-        candidates = await transaction.guest.findMany({
-          where: eligibleGuestWhere(round.targetGroupId, actualThreshold),
-          select: { id: true, name: true, primaryGroup: { select: { name: true } } },
-          orderBy: { attendanceNumber: "asc" },
-        });
+      let actualThreshold = initialThreshold;
+      let fallbackCount = 0;
+      let candidates = allEligible;
+      if (scoreFiltered) {
+        const resolved = resolveScoreThreshold(allEligible.map((candidate) => candidate.quizScore ?? -1), initialThreshold ?? 0, round.plannedWinnerCount, fallbackStep);
+        actualThreshold = resolved.actualThreshold;
+        fallbackCount = resolved.fallbackCount;
+        candidates = allEligible.filter((candidate) => (candidate.quizScore ?? -1) >= resolved.actualThreshold);
       }
       if (candidates.length === 0) {
         throw new DrawingValidationError("Not enough eligible candidates");

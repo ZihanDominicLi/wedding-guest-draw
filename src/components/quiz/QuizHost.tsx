@@ -60,6 +60,16 @@ export function QuizHost({ initialSessions }: { initialSessions: Session[] }) {
     const next = payload.data?.session ?? payload.data;
     setSessions((items) => items.map((item) => item.id === session.id ? { ...item, ...(next?.status ? { status: next.status } : {}), ...(next?.currentQuestionIndex !== undefined ? { currentQuestionIndex: next.currentQuestionIndex } : {}) } : item));
   }
+  async function deleteSession(session: Session) {
+    if (session.status === "LIVE") return;
+    if (!window.confirm(`确认删除答题场次“${session.title}”？该场次的题目、答题记录和宾客答题分数都会被清理，不能恢复。`)) return;
+    setBusy(`${session.id}:delete`); setMessage("");
+    const response = await fetch(`/api/quiz/${encodeURIComponent(session.id)}`, { method: "DELETE" });
+    const payload = await response.json().catch(() => ({}));
+    setBusy(null);
+    if (!response.ok) return setMessage(payload.error?.message ?? "删除失败");
+    setSessions((items) => items.filter((item) => item.id !== session.id));
+  }
   return <section className="admin-panel"><header><p className="admin-eyebrow">Quiz control</p><h1>现场同步答题</h1><div className="quiz-host-header-actions"><a href="/admin/quiz/new">新建答题场次</a><a href="/quiz/screen" target="_blank" rel="noreferrer">打开答题大屏</a><a href="/quiz" target="_blank" rel="noreferrer">打开宾客答题页</a></div></header>{sessions.length ? sessions.map((session) => {
     const current = session.currentQuestionIndex ? session.questions.find((q) => q.order === session.currentQuestionIndex) : null;
     const review = session.status === "REVIEW";
@@ -70,6 +80,7 @@ export function QuizHost({ initialSessions }: { initialSessions: Session[] }) {
       {review && (session.currentQuestionIndex ?? 0) < session.questions.length ? <button disabled={Boolean(busy)} onClick={() => void call(session, "advance")}>开始下一题</button> : null}
       {review && (session.currentQuestionIndex ?? 0) >= session.questions.length ? <button disabled={Boolean(busy)} onClick={() => void call(session, "finish")}>结束并计分</button> : null}
       <a className="secondary-action" href={`/admin/quiz/${session.id}/questions`}>题目设置</a>
+      {session.status !== "LIVE" ? <button className="danger-action" disabled={Boolean(busy)} onClick={() => void deleteSession(session)}>删除场次</button> : null}
     </div></article>;
   }) : <p>还没有答题场次，请新建一场答题。</p>}{message ? <p role="alert">{message}</p> : null}</section>;
 }
