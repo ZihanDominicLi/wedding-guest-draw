@@ -51,6 +51,34 @@ enum QuizParticipantStatus {
   DISQUALIFIED
 }
 
+enum EventPhase {
+  REGISTRATION
+  QUESTION
+  SETTLING
+  QUIZ_ENDED
+  RESULTS
+  FINISHED
+}
+
+enum PendingTransitionStatus {
+  PENDING
+  APPLIED
+  CANCELLED
+}
+
+enum QuizParticipantGroup {
+  FRIEND
+  ELDER
+}
+
+enum QuizResultRoundType {
+  ELDER_TOP
+  FRIEND_TOP
+  ELDER_RANDOM
+  FRIEND_RANDOM
+  WITH_CHILD_RANDOM
+}
+
 model WeddingSettings {
   id                   String    @id @default("default")
   groomName            String    @default("")
@@ -205,9 +233,14 @@ model QuizSession {
   id                      String                 @id @default(uuid())
   title                   String
   status                  QuizSessionStatus     @default(DRAFT)
+  phase                   EventPhase            @default(REGISTRATION)
   questionCount           Int                    @default(10)
   defaultTimeLimitSeconds Int                    @default(30)
   currentQuestionIndex    Int?
+  currentRound            Int?
+  registrationClosedAt    DateTime?
+  scoringRuleVersion      String                 @default("wedding-v1")
+  settledAt               DateTime?
   publishedAt             DateTime?
   startedAt               DateTime?
   finishedAt              DateTime?
@@ -218,9 +251,33 @@ model QuizSession {
   questions               QuizQuestion[]
   participants            QuizParticipant[]
   guests                  Guest[]                @relation("GuestQuizSession")
+  pendingTransitions      PendingTransition[]
+  resultRounds            QuizResultRound[]
 
   @@index([status, createdAt])
+  @@index([phase, version, updatedAt])
   @@map("quiz_session")
+}
+
+model PendingTransition {
+  id                String                 @id @default(uuid())
+  eventId           String
+  requestId         String
+  fromPhase         EventPhase
+  toPhase           EventPhase
+  fromQuestionIndex Int?
+  toQuestionIndex   Int?
+  fromRound         Int?
+  toRound           Int?
+  effectiveAt       DateTime
+  status            PendingTransitionStatus @default(PENDING)
+  createdAt         DateTime               @default(now())
+  appliedAt         DateTime?
+  event             QuizSession            @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, requestId])
+  @@index([eventId, status, effectiveAt])
+  @@map("pending_transition")
 }
 
 model QuizQuestion {
@@ -252,17 +309,24 @@ model QuizParticipant {
   guestId       String
   tokenHash     String
   status        QuizParticipantStatus @default(ACTIVE)
+  participantGroup QuizParticipantGroup @default(FRIEND)
+  hasChildren   Boolean               @default(false)
   score         Int                   @default(0)
+  totalScore    Int?
+  answeredCount Int                   @default(0)
+  settledAt     DateTime?
   completedAt   DateTime?
   createdAt     DateTime              @default(now())
   updatedAt     DateTime              @updatedAt
   session       QuizSession           @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   guest         Guest                 @relation(fields: [guestId], references: [id], onDelete: Cascade)
   answers       QuizAnswer[]
+  resultWinners QuizWinner[]
 
   @@unique([sessionId, guestId])
   @@index([guestId, status])
   @@index([tokenHash])
+  @@index([sessionId, participantGroup, totalScore])
   @@map("quiz_participant")
 }
 
@@ -276,13 +340,61 @@ model QuizAnswer {
   score          Int             @default(0)
   submittedAt    DateTime        @default(now())
   idempotencyKey String?
+  submissionId   String?
   createdAt      DateTime        @default(now())
   participant    QuizParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
   question       QuizQuestion    @relation(fields: [questionId], references: [id], onDelete: Cascade)
 
   @@unique([participantId, questionId])
+  @@unique([submissionId])
+  @@index([participantId, questionId])
+  @@index([participantId, questionId, submittedAt])
   @@index([questionId, submittedAt])
   @@map("quiz_answer")
+}
+
+model QuizResultRound {
+  id                 String              @id @default(uuid())
+  eventId            String
+  round              Int
+  type               QuizResultRoundType
+  requestedCount     Int
+  eligibleCount      Int
+  actualCount        Int
+  shortage           Int                 @default(0)
+  actualThreshold    Int?
+  ruleVersion        String
+  candidateSnapshot  Json
+  sameScoreOrder     Json?
+  revealedAt         DateTime?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  event              QuizSession         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  winners            QuizWinner[]
+
+  @@unique([eventId, round])
+  @@index([eventId, revealedAt])
+  @@map("quiz_result_round")
+}
+
+model QuizWinner {
+  id                    String          @id @default(uuid())
+  eventId               String
+  resultRoundId         String
+  participantId         String
+  ordinal               Int
+  displayNameSnapshot   String
+  scoreSnapshot         Int?
+  candidateSnapshot     Json
+  createdAt             DateTime        @default(now())
+  resultRound           QuizResultRound @relation(fields: [resultRoundId], references: [id], onDelete: Cascade)
+  participant           QuizParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+
+  @@unique([resultRoundId, ordinal])
+  @@unique([resultRoundId, participantId])
+  @@unique([eventId, participantId])
+  @@index([eventId, resultRoundId])
+  @@map("quiz_winner")
 }
 
 model GuestTag {
