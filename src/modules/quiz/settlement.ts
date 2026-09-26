@@ -35,7 +35,7 @@ async function existingSettlement(transaction: Transaction, eventId: string) {
   return rounds.map(resultView);
 }
 
-export async function settleEvent(eventId: string, actorId: string, requestId: string) {
+export async function settleEvent(eventId: string, actorId: string | null, requestId: string) {
   await applyDueTransition(eventId);
   return db.$transaction(async (transaction) => withTransactionIdempotency(transaction, `quiz:settle:${eventId}`, requestId, async () => {
     const session = await transaction.quizSession.findUnique({ where: { id: eventId }, include: { questions: { orderBy: { order: "asc" } } } });

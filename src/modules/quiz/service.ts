@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { withTransactionIdempotency } from "@/lib/idempotency";
 import { publishLiveEvent } from "@/modules/live/bus";
 import { hashParticipantToken } from "./participant-token";
+import { isWithinAnswerWindow } from "./answer-window";
 import { validateQuizDefinition, validateQuizForPublish, type QuizDefinitionQuestion } from "./config";
 import {
   QuizParticipantError,
@@ -282,6 +283,7 @@ export async function submitEventAnswer(
 ): Promise<AnswerReceipt> {
   if (!input.submissionId.trim() || input.submissionId.length > 160) throw new QuizValidationError("Invalid submission identifier");
   if (!Number.isInteger(input.optionIndex) || input.optionIndex < 0) throw new QuizValidationError("Invalid answer option");
+  const receivedAt = new Date();
   try {
     return await db.$transaction(async (transaction) => withTransactionIdempotency(
       transaction,
@@ -299,6 +301,14 @@ export async function submitEventAnswer(
         if (question.correctOption === null) throw new QuizStateError("Question answer is not configured");
         const existing = await transaction.quizAnswer.findUnique({ where: { participantId_questionId: { participantId: participant.id, questionId: input.questionId } } });
         if (existing) return eventAnswerReceipt(existing);
+        const pendingTransition = await transaction.pendingTransition.findFirst({
+          where: { eventId, status: "PENDING", fromPhase: "QUESTION", fromQuestionIndex: question.order },
+          orderBy: { effectiveAt: "asc" },
+          select: { effectiveAt: true },
+        });
+        if (!isWithinAnswerWindow(question.opensAt, question.closesAt, receivedAt, pendingTransition?.effectiveAt ?? null)) {
+          throw new QuizStateError("Question is closed");
+        }
         const answer = await transaction.quizAnswer.create({
           data: {
             participantId: participant.id,
@@ -307,7 +317,8 @@ export async function submitEventAnswer(
             selectedOption: input.optionIndex,
             isLate: false,
             isCorrect: input.optionIndex === question.correctOption,
-            score: input.optionIndex === question.correctOption ? 10 : 0,
+            score: input.optionIndex === question.correctOption ? 1 : 0,
+            submittedAt: receivedAt,
           },
         });
         return eventAnswerReceipt(answer);

@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - 活动阶段只能是 `REGISTRATION → QUESTION(1..10) → SETTLING → QUIZ_ENDED → RESULTS(1..5) → FINISHED`。
-- 每题 10 分，总分 0–100；错答和未答为 0；同一宾客同一题第一次成功提交后锁定。
+- 每题 1 分，总分 0–10；错答和未答为 0；同一宾客同一题第一次成功提交后锁定。
 - 主持操作默认安排服务端当前时间后 8 秒的 `effectiveAt`，且每个场次最多一个待生效计划。
 - 页面状态只能通过数据库快照轮询获得；前台正常轮询间隔为 5 秒，禁止使用 SSE 作为状态通知。
 - 五轮结果在结算事务中一次生成并冻结：长辈前 10、朋友前 5、长辈随机 20、朋友随机 10、带小朋友随机 20；全局不重复。
@@ -88,7 +88,7 @@
 - `settleEvent(eventId: string, actorId: string, requestId: string): Promise<SettlementView>`.
 - `buildFrozenResults(participants: SettledParticipant[], ruleVersion: string): FrozenRound[]`.
 
-- [ ] **Step 1: Write failing tests** for first-write locking, duplicate submission receipt, closed-question `409`, unanswered score 0, total 0–100, and no answer/candidate data leakage.
+- [ ] **Step 1: Write failing tests** for first-write locking, duplicate submission receipt, closed-question `409`, unanswered score 0, total 0–10, and no answer/candidate data leakage.
 - [ ] **Step 2: Run answer and settlement tests** and verify current manual-submit/auto-close behavior fails the new contracts.
 - [ ] **Step 3: Implement server answer validation** against the current persisted phase and due transition; bind participant solely from the HttpOnly token; enforce unique `(eventId, participantId, questionId)` and `submissionId` idempotency.
 - [ ] **Step 4: Implement settlement** to recalculate scores from persisted answers inside a recoverable transaction, write `answeredCount`, `totalScore`, `settledAt`, and transition to `QUIZ_ENDED`.

@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { effectiveQuestionCloseAt } from "@/modules/quiz/answer-window";
 
 export async function getAdminSnapshot() {
   const since = new Date(Date.now() - 60 * 60 * 1000);
@@ -36,8 +37,20 @@ export async function getAdminSnapshot() {
 }
 
 export async function getScreenSnapshot() {
-  const quiz = await db.quizSession.findFirst({ where: { status: { in: ["LIVE", "REVIEW", "FINISHED"] } }, orderBy: { updatedAt: "desc" } });
+  const quiz = await db.quizSession.findFirst({
+    where: { status: { in: ["LIVE", "REVIEW", "FINISHED"] } },
+    orderBy: { updatedAt: "desc" },
+    include: { pendingTransitions: { where: { status: "PENDING" }, orderBy: { effectiveAt: "asc" }, take: 1 } },
+  });
   const quizQuestion = quiz?.currentQuestionIndex ? await db.quizQuestion.findUnique({ where: { sessionId_order: { sessionId: quiz.id, order: quiz.currentQuestionIndex } } }) : null;
+  const scheduledCloseAt = quizQuestion && quiz?.pendingTransitions[0]?.fromPhase === "QUESTION" && quiz.pendingTransitions[0].fromQuestionIndex === quizQuestion.order
+    ? quiz.pendingTransitions[0].effectiveAt
+    : null;
+  const quizResults = quiz ? await db.quizResultRound.findMany({
+    where: { eventId: quiz.id, revealedAt: { not: null, lte: new Date() } },
+    orderBy: { round: "asc" },
+    include: { winners: { orderBy: { ordinal: "asc" }, select: { id: true, displayNameSnapshot: true, scoreSnapshot: true } } },
+  }) : [];
   const round = await db.drawRound.findFirst({
     where: { status: { in: ["LOCKED", "DRAWN", "PUBLISHED"] } },
     orderBy: { updatedAt: "desc" },
@@ -57,15 +70,24 @@ export async function getScreenSnapshot() {
     quiz: quiz ? {
       id: quiz.id,
       status: quiz.status,
+      phase: quiz.phase,
+      version: quiz.version,
       currentQuestionIndex: quiz.currentQuestionIndex,
       question: quizQuestion ? {
         id: quizQuestion.id,
         order: quizQuestion.order,
         prompt: quizQuestion.prompt,
         options: quizQuestion.options,
-        closesAt: quizQuestion.closesAt?.toISOString() ?? null,
+        closesAt: effectiveQuestionCloseAt(quizQuestion.closesAt, scheduledCloseAt)?.toISOString() ?? null,
         ...(quiz.status === "REVIEW" || quiz.status === "FINISHED" ? { correctOption: quizQuestion.correctOption, explanation: quizQuestion.explanation } : {}),
       } : null,
+      results: quizResults.map((result) => ({
+        round: result.round,
+        type: result.type,
+        requestedCount: result.requestedCount,
+        actualCount: result.actualCount,
+        winners: result.winners.map((winner) => ({ id: winner.id, name: winner.displayNameSnapshot, score: winner.scoreSnapshot })),
+      })),
     } : null,
     round: round
       ? {

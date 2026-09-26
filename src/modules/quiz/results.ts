@@ -40,7 +40,7 @@ export type FrozenRound = {
 
 export function scoreAnswers(answerScores: Array<boolean | null>): { totalScore: number; answeredCount: number } {
   return {
-    totalScore: answerScores.reduce((total, answer) => total + (answer === true ? 10 : 0), 0),
+    totalScore: answerScores.reduce((total, answer) => total + (answer === true ? 1 : 0), 0),
     answeredCount: answerScores.filter((answer) => answer !== null).length,
   };
 }

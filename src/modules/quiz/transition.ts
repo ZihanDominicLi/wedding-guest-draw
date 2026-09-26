@@ -1,6 +1,7 @@
 import { Prisma, type PrismaClient, type EventPhase, type QuizResultRoundType } from "@prisma/client";
 
 import { hashParticipantToken } from "./participant-token";
+import { createQuestionWindow, effectiveQuestionCloseAt } from "./answer-window";
 import { QuizParticipantError, QuizStateError, QuizValidationError, type EventStateView, type PendingTransitionView, type QuizQuestionView, type QuizResultRoundView } from "./types";
 
 export const DEFAULT_TRANSITION_DELAY_MS = 8_000;
@@ -18,6 +19,10 @@ export type TransitionTarget = {
   questionIndex: number | null;
   round: number | null;
 };
+
+export function isTransitionApplicable(currentPhase: EventPhase, fromPhase: EventPhase): boolean {
+  return currentPhase === fromPhase;
+}
 
 type PhaseInput = {
   phase: EventPhase;
@@ -150,10 +155,34 @@ export async function applyDueTransition(eventId: string, now = new Date()): Pro
   await db.$transaction(async (transaction) => {
     const pending = await transaction.pendingTransition.findFirst({ where: { eventId, status: "PENDING", effectiveAt: { lte: now } }, orderBy: { effectiveAt: "asc" } });
     if (!pending) return;
+    const session = await transaction.quizSession.findUnique({ where: { id: eventId } });
+    if (!session || !isTransitionApplicable(session.phase, pending.fromPhase)) return;
     const claimed = await transaction.pendingTransition.updateMany({ where: { id: pending.id, status: "PENDING" }, data: { status: "APPLIED", appliedAt: now } });
     if (claimed.count !== 1) return;
-    const session = await transaction.quizSession.findUnique({ where: { id: eventId } });
-    if (!session || session.phase !== pending.fromPhase) return;
+    if (pending.fromPhase === "QUESTION" && pending.fromQuestionIndex !== null) {
+      await transaction.quizQuestion.updateMany({
+        where: { sessionId: eventId, order: pending.fromQuestionIndex },
+        data: { closesAt: pending.effectiveAt },
+      });
+    }
+    if (pending.toPhase === "QUESTION" && pending.toQuestionIndex !== null) {
+      const question = await transaction.quizQuestion.findFirst({
+        where: { sessionId: eventId, order: pending.toQuestionIndex },
+        select: { id: true, timeLimitSeconds: true },
+      });
+      if (!question) throw new QuizValidationError("Question not found");
+      const window = createQuestionWindow(pending.effectiveAt, question.timeLimitSeconds ?? session.defaultTimeLimitSeconds);
+      await transaction.quizQuestion.update({
+        where: { id: question.id },
+        data: { opensAt: window.opensAt, closesAt: window.closesAt, publishedAt: null },
+      });
+    }
+    if (pending.toPhase === "RESULTS" && pending.toRound !== null) {
+      await transaction.quizResultRound.updateMany({
+        where: { eventId, round: pending.toRound, revealedAt: null },
+        data: { revealedAt: pending.effectiveAt },
+      });
+    }
     await transaction.quizSession.update({
       where: { id: eventId },
       data: {
@@ -161,9 +190,9 @@ export async function applyDueTransition(eventId: string, now = new Date()): Pro
         status: statusForPhase(pending.toPhase),
         currentQuestionIndex: pending.toQuestionIndex,
         currentRound: pending.toRound,
-        registrationClosedAt: pending.toPhase === "QUESTION" && !session.registrationClosedAt ? now : session.registrationClosedAt,
-        startedAt: pending.toPhase === "QUESTION" && !session.startedAt ? now : session.startedAt,
-        finishedAt: pending.toPhase === "FINISHED" ? now : session.finishedAt,
+        registrationClosedAt: pending.toPhase === "QUESTION" && !session.registrationClosedAt ? pending.effectiveAt : session.registrationClosedAt,
+        startedAt: pending.toPhase === "QUESTION" && !session.startedAt ? pending.effectiveAt : session.startedAt,
+        finishedAt: pending.toPhase === "FINISHED" ? pending.effectiveAt : session.finishedAt,
         version: { increment: 1 },
       },
     });
@@ -206,7 +235,7 @@ export async function getEventState(eventId: string, actor: StateActor): Promise
   const db = await getDb();
   const now = new Date();
   await applyDueTransition(eventId, now);
-  const session = await db.quizSession.findUnique({
+  let session = await db.quizSession.findUnique({
     where: { id: eventId },
     include: {
       questions: { orderBy: { order: "asc" } },
@@ -215,9 +244,28 @@ export async function getEventState(eventId: string, actor: StateActor): Promise
     },
   });
   if (!session) throw new QuizValidationError("Quiz session not found");
+  if (session.phase === "SETTLING") {
+    const { settleEvent } = await import("./settlement");
+    await settleEvent(eventId, actor.kind === "admin" ? actor.actorId : null, `auto-settle:${eventId}`);
+    session = await db.quizSession.findUnique({
+      where: { id: eventId },
+      include: {
+        questions: { orderBy: { order: "asc" } },
+        pendingTransitions: { where: { status: "PENDING" }, orderBy: { effectiveAt: "asc" }, take: 1 },
+        resultRounds: { include: { winners: { orderBy: { ordinal: "asc" } } }, orderBy: { round: "asc" } },
+      },
+    });
+    if (!session) throw new QuizValidationError("Quiz session not found");
+  }
   const participant = await participantForActor(eventId, actor, db);
   if (actor.kind === "participant" && !participant) throw new QuizParticipantError();
   const currentQuestion = session.currentQuestionIndex ? session.questions.find((question) => question.order === session.currentQuestionIndex) : null;
+  const scheduledCloseAt = currentQuestion && session.pendingTransitions[0]?.fromPhase === "QUESTION" && session.pendingTransitions[0].fromQuestionIndex === currentQuestion.order
+    ? session.pendingTransitions[0].effectiveAt
+    : null;
+  const visibleQuestion = currentQuestion && scheduledCloseAt
+    ? { ...currentQuestion, closesAt: effectiveQuestionCloseAt(currentQuestion.closesAt, scheduledCloseAt) }
+    : currentQuestion;
   const visibleResults = actor.kind === "admin" ? session.resultRounds : session.resultRounds.filter((round) => round.revealedAt && round.revealedAt <= now);
   const answers = participant ? await db.quizAnswer.findMany({ where: { participantId: participant.id }, orderBy: { submittedAt: "asc" } }) : [];
   return {
@@ -225,10 +273,10 @@ export async function getEventState(eventId: string, actor: StateActor): Promise
     serverTime: now.toISOString(), pendingTransition: session.pendingTransitions[0] ? toPendingView(session.pendingTransitions[0]) : null,
     currentQuestion: actor.kind === "public"
       ? null
-      : currentQuestion
+      : visibleQuestion
         ? (actor.kind === "admin"
-          ? questionForAdmin({ ...currentQuestion, timeLimitSeconds: currentQuestion.timeLimitSeconds ?? session.defaultTimeLimitSeconds })
-          : redactQuestionForParticipant({ ...currentQuestion, timeLimitSeconds: currentQuestion.timeLimitSeconds ?? session.defaultTimeLimitSeconds }))
+          ? questionForAdmin({ ...visibleQuestion, timeLimitSeconds: visibleQuestion.timeLimitSeconds ?? session.defaultTimeLimitSeconds })
+          : redactQuestionForParticipant({ ...visibleQuestion, timeLimitSeconds: visibleQuestion.timeLimitSeconds ?? session.defaultTimeLimitSeconds }))
         : null,
     me: participant ? { participantId: participant.id, answeredQuestionIds: answers.map((answer) => answer.questionId), answers: answers.map((answer) => ({ questionId: answer.questionId, submissionId: answer.submissionId ?? answer.id, selectedOption: answer.selectedOption, accepted: !answer.isLate, isLate: answer.isLate, score: session.phase === "RESULTS" || session.phase === "FINISHED" ? answer.score : null, submittedAt: answer.submittedAt.toISOString() })), totalScore: session.phase === "RESULTS" || session.phase === "FINISHED" ? participant.totalScore : null } : null,
     results: actor.kind === "public" ? [] : visibleResults.map(resultRoundView),

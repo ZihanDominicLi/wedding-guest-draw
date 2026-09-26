@@ -10,8 +10,8 @@ const participants = [
 ];
 
 describe("wedding quiz settlement rules", () => {
-  it("scores each correct answer as ten points and leaves unanswered answers at zero", () => {
-    expect(scoreAnswers([true, false, null, true])).toEqual({ totalScore: 20, answeredCount: 3 });
+  it("scores each correct answer as one point and leaves unanswered answers at zero", () => {
+    expect(scoreAnswers([true, false, null, true])).toEqual({ totalScore: 2, answeredCount: 3 });
   });
 
   it("freezes five rounds without selecting a participant twice", () => {
@@ -20,7 +20,7 @@ describe("wedding quiz settlement rules", () => {
     const winners = rounds.flatMap((round) => round.winners.map((winner) => winner.participantId));
     expect(new Set(winners).size).toBe(winners.length);
     expect(rounds.map((round) => round.requestedCount)).toEqual([10, 5, 20, 10, 20]);
-    expect(rounds[0].winners[0].score).toBe(100);
+    expect(rounds[0].winners[0].score).toBe(10);
     expect(rounds[0].type).toBe("ELDER_TOP");
   });
 

@@ -5,7 +5,7 @@ describe("event answer contract", () => {
     expect({ submissionId: "submission-1" }).toHaveProperty("submissionId");
   });
 
-  it("uses a ten-point maximum for ten questions", () => {
-    expect(10 * 10).toBe(100);
+  it("uses a one-point maximum per question for ten questions", () => {
+    expect(10 * 1).toBe(10);
   });
 });

@@ -6,6 +6,13 @@ export type PollingState = object;
 
 type VersionedState = { version?: number };
 
+const MAX_FAILURE_DELAY_MS = 30_000;
+
+export function getPollingDelay(intervalMs: number, consecutiveFailures: number): number {
+  if (consecutiveFailures <= 0) return intervalMs;
+  return Math.min(MAX_FAILURE_DELAY_MS, intervalMs * (2 ** Math.min(consecutiveFailures, 8)));
+}
+
 export function applyVersionedState<T extends PollingState>(previous: T | null, next: T): T {
   const previousVersion = (previous as VersionedState | null)?.version;
   const nextVersion = (next as VersionedState).version;
@@ -37,9 +44,10 @@ export function useEventStatePolling<T extends PollingState>({
   const [error, setError] = useState<Error | null>(null);
   const requestInFlight = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
+  const failuresRef = useRef(0);
 
   const refresh = useCallback(async () => {
-    if (!url || requestInFlight.current) return;
+    if (!url || requestInFlight.current) return false;
     requestInFlight.current = true;
     abortRef.current?.abort();
     const controller = new AbortController();
@@ -57,11 +65,15 @@ export function useEventStatePolling<T extends PollingState>({
       });
       setError(null);
       setLoading(false);
+      failuresRef.current = 0;
+      return true;
     } catch (cause) {
       if (!(cause instanceof DOMException && cause.name === "AbortError")) {
         setError(cause instanceof Error ? cause : new Error("Polling request failed"));
         setLoading(false);
+        failuresRef.current += 1;
       }
+      return false;
     } finally {
       requestInFlight.current = false;
     }
@@ -69,14 +81,28 @@ export function useEventStatePolling<T extends PollingState>({
 
   useEffect(() => {
     if (!url) return;
-    const initialTimer = window.setTimeout(() => void refresh(), 0);
-    const timer = window.setInterval(() => void refresh(), intervalMs);
-    const onOnline = () => void refresh();
+    let disposed = false;
+    let timer: number | undefined;
+    const poll = async () => {
+      const succeeded = await refresh();
+      if (disposed) return;
+      timer = window.setTimeout(() => void poll(), getPollingDelay(intervalMs, succeeded ? 0 : failuresRef.current));
+    };
+    const trigger = () => {
+      if (timer !== undefined) window.clearTimeout(timer);
+      void poll();
+    };
+    const onOnline = () => trigger();
+    const onVisible = () => { if (document.visibilityState === "visible") trigger(); };
+    const initialTimer = window.setTimeout(() => void poll(), 0);
     window.addEventListener("online", onOnline);
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
-      window.clearInterval(timer);
+      disposed = true;
+      if (timer !== undefined) window.clearTimeout(timer);
       window.clearTimeout(initialTimer);
       window.removeEventListener("online", onOnline);
+      document.removeEventListener("visibilitychange", onVisible);
       abortRef.current?.abort();
     };
   }, [intervalMs, refresh, url]);

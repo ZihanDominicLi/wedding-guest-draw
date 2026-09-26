@@ -9,7 +9,7 @@ export type ScreenSnapshot = {
     screenTitle: string;
     screenBackgroundPath: string | null;
   };
-  quiz?: null | { id: string; status: "LIVE" | "REVIEW" | "FINISHED"; currentQuestionIndex: number | null; question: { id: string; order: number; prompt: string; options: unknown[]; closesAt: string | null; correctOption?: number; explanation?: string | null } | null };
+  quiz?: null | { id: string; status: "LIVE" | "REVIEW" | "FINISHED"; phase: string; version: number; currentQuestionIndex: number | null; question: { id: string; order: number; prompt: string; options: unknown[]; closesAt: string | null; correctOption?: number; explanation?: string | null } | null; results: Array<{ round: number; type: string; requestedCount: number; actualCount: number; winners: Array<{ id: string; name: string; score: number | null }> }> };
   round: null | {
     id: string;
     status: "LOCKED" | "DRAWN" | "PUBLISHED";
