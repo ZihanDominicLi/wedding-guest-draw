@@ -43,7 +43,13 @@ remote_env_command() {
 }
 
 ssh_command() {
-  ssh -p "$DEPLOY_SSH_PORT" -o BatchMode=yes -o ConnectTimeout=15 "$DEPLOY_USER@$DEPLOY_HOST" "$@"
+  ssh -p "$DEPLOY_SSH_PORT" \
+    -o BatchMode=yes \
+    -o ConnectTimeout=15 \
+    -o TCPKeepAlive=yes \
+    -o ServerAliveInterval=15 \
+    -o ServerAliveCountMax=120 \
+    "$DEPLOY_USER@$DEPLOY_HOST" "$@"
 }
 
 preflight_local() {
