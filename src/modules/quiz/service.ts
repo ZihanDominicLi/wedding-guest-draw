@@ -23,8 +23,19 @@ function json(value: unknown): Prisma.InputJsonValue {
 function sessionView(session: {
   id: string; title: string; status: QuizSessionView["status"]; questionCount: number;
   defaultTimeLimitSeconds: number; currentQuestionIndex: number | null; startedAt: Date | null; finishedAt: Date | null;
+  phase?: QuizSessionView["phase"]; currentRound?: number | null; version?: number;
+  registrationClosedAt?: Date | null; settledAt?: Date | null;
 }): QuizSessionView {
-  return { ...session, startedAt: session.startedAt?.toISOString() ?? null, finishedAt: session.finishedAt?.toISOString() ?? null };
+  return {
+    ...session,
+    phase: session.phase,
+    currentRound: session.currentRound,
+    version: session.version,
+    registrationClosedAt: session.registrationClosedAt?.toISOString() ?? null,
+    settledAt: session.settledAt?.toISOString() ?? null,
+    startedAt: session.startedAt?.toISOString() ?? null,
+    finishedAt: session.finishedAt?.toISOString() ?? null,
+  };
 }
 
 function questionView(question: {
