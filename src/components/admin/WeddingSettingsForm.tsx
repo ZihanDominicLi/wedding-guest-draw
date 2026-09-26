@@ -23,13 +23,25 @@ export function WeddingSettingsForm({ initialValue }: { initialValue: SettingsVa
     event.preventDefault();
     setPending(true);
     setMessage("");
-    const response = await fetch("/api/admin/settings", {
-      method: "PUT",
-      body: new FormData(event.currentTarget),
-    });
-    const payload = await response.json();
-    setPending(false);
-    setMessage(response.ok ? "设置已保存" : (payload.error?.message ?? "保存失败"));
+    try {
+      const response = await fetch("/api/admin/settings", {
+        method: "PUT",
+        body: new FormData(event.currentTarget),
+      });
+      if (response.ok) {
+        setMessage("设置已保存");
+        return;
+      }
+
+      const payload = await response.json().catch(() => null) as {
+        error?: { message?: string };
+      } | null;
+      setMessage(payload?.error?.message ?? `保存失败（HTTP ${response.status}）`);
+    } catch {
+      setMessage("保存失败，请检查网络连接后重试");
+    } finally {
+      setPending(false);
+    }
   }
 
   return (
