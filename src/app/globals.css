@@ -1291,15 +1291,15 @@ a {
   inset: -10px;
   background-position: center;
   background-size: cover;
-  filter: blur(4px);
-  transform: scale(1.01);
+  filter: blur(1px);
+  transform: scale(1.005);
 }
 
 .projector-shade {
   position: absolute;
   z-index: -1;
   inset: 0;
-  background: rgb(19 20 16 / 48%);
+  background: rgb(19 20 16 / 34%);
 }
 
 .projector canvas {
