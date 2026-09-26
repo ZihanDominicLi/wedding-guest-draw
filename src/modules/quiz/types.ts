@@ -9,7 +9,7 @@ export type QuizQuestionView = {
   opensAt: string | null;
   closesAt: string | null;
   publishedAt: string | null;
-  correctOption?: number;
+  correctOption?: number | null;
   explanation?: string | null;
 };
 
@@ -39,7 +39,7 @@ export type QuizParticipantView = {
     score: number;
     submittedAt: string;
     published: boolean;
-    correctOption?: number;
+    correctOption?: number | null;
     explanation?: string | null;
   } | null;
 };

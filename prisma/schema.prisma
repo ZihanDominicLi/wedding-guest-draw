@@ -228,7 +228,7 @@ model QuizQuestion {
   order              Int
   prompt             String
   options            Json
-  correctOption      Int
+  correctOption      Int?
   explanation        String?
   timeLimitSeconds   Int?
   enabled            Boolean      @default(true)

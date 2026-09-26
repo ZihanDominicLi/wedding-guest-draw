@@ -7,7 +7,7 @@ import { ok, problem } from "@/lib/http";
 const schema = z.object({
   prompt: z.string().trim().min(1).max(500).optional(),
   options: z.array(z.unknown()).min(2).max(8).optional(),
-  correctOption: z.number().int().min(0).optional(),
+  correctOption: z.number().int().min(0).nullable().optional(),
   explanation: z.string().trim().max(1000).nullable().optional(),
   timeLimitSeconds: z.number().int().min(5).max(300).nullable().optional(),
 });
@@ -22,8 +22,8 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     if (!["DRAFT", "READY"].includes(question.session.status)) return problem(409, "QUIZ_LOCKED", "答题开始后不能修改题目");
     const options = input.options ?? (Array.isArray(question.options) ? question.options : []);
     const optionsJson = JSON.parse(JSON.stringify(options)) as Prisma.InputJsonValue;
-    const correctOption = input.correctOption ?? question.correctOption;
-    if (correctOption >= options.length) return problem(422, "INVALID_QUIZ_REQUEST", "正确答案超出选项范围");
+    const correctOption = input.correctOption !== undefined ? input.correctOption : question.correctOption;
+    if (correctOption !== null && correctOption >= options.length) return problem(422, "INVALID_QUIZ_REQUEST", "正确答案超出选项范围");
     const updated = await db.$transaction(async (transaction) => {
       const result = await transaction.quizQuestion.update({ where: { id: questionId }, data: { ...input, options: optionsJson, correctOption } });
       await transaction.auditEvent.create({ data: { actorId: admin.id, action: "quiz.question_updated", entityType: "QuizQuestion", entityId: questionId, afterJson: { order: result.order } } });

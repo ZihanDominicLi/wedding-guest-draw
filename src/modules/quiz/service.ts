@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { withTransactionIdempotency } from "@/lib/idempotency";
 import { publishLiveEvent } from "@/modules/live/bus";
 import { hashParticipantToken } from "./participant-token";
+import { validateQuizDefinition, validateQuizForPublish, type QuizDefinitionQuestion } from "./config";
 import {
   QuizParticipantError,
   QuizStateError,
@@ -46,14 +47,13 @@ function assertStatus(status: string, allowed: string[]) {
 }
 
 export async function createQuizSession(input: {
-  title: string; defaultTimeLimitSeconds?: number; questions: Array<{ prompt: string; options: unknown[]; correctOption: number; explanation?: string; timeLimitSeconds?: number }>;
+  title: string; defaultTimeLimitSeconds?: number; questions: Array<QuizDefinitionQuestion & { explanation?: string; timeLimitSeconds?: number }>;
 }, actorId: string, idempotencyKey: string) {
-  if (!input.title.trim() || input.questions.length !== 10) throw new QuizValidationError("A quiz must contain exactly 10 questions");
+  if (!input.title.trim()) throw new QuizValidationError("Quiz title is required");
   const limit = input.defaultTimeLimitSeconds ?? 30;
   if (!Number.isInteger(limit) || limit < 5 || limit > 300) throw new QuizValidationError("Invalid time limit");
-  for (const question of input.questions) {
-    if (!question.prompt.trim() || question.options.length < 2 || !Number.isInteger(question.correctOption) || question.correctOption < 0 || question.correctOption >= question.options.length) throw new QuizValidationError("Invalid question");
-  }
+  const definitionErrors = validateQuizDefinition(input.questions);
+  if (definitionErrors.length) throw new QuizValidationError(definitionErrors[0]);
   const session = await db.$transaction(async (transaction) => withTransactionIdempotency(transaction, "quiz:create", idempotencyKey, async () => {
     const created = await transaction.quizSession.create({
       data: {
@@ -143,7 +143,7 @@ export async function getParticipantQuizState(sessionId: string, token: string) 
   const revealed = Boolean(answer && (state.session.status === "REVIEW" || state.session.status === "FINISHED") && answer.question.publishedAt);
   return {
     ...state,
-    question: state.question && revealed && answer ? { ...state.question, correctOption: answer.question.correctOption, explanation: answer.question.explanation } : state.question,
+    question: state.question && revealed && answer && answer.question.correctOption !== null ? { ...state.question, correctOption: answer.question.correctOption, explanation: answer.question.explanation } : state.question,
     participant: {
       id: participant.id, guestId: participant.guestId, status: participant.status, score: participant.score,
       completedAt: participant.completedAt?.toISOString() ?? null,
@@ -151,7 +151,7 @@ export async function getParticipantQuizState(sessionId: string, token: string) 
         questionId: answer.questionId, selectedOption: answer.selectedOption, accepted: !answer.isLate,
         isLate: answer.isLate, isCorrect: revealed ? answer.isCorrect : null, score: revealed ? answer.score : 0,
         submittedAt: answer.submittedAt.toISOString(), published: revealed,
-        ...(revealed ? { correctOption: answer.question.correctOption, explanation: answer.question.explanation } : {}),
+        ...(revealed && answer.question.correctOption !== null ? { correctOption: answer.question.correctOption, explanation: answer.question.explanation } : {}),
       } : null,
     } satisfies QuizParticipantView,
   };
@@ -170,6 +170,7 @@ export async function submitQuizAnswer(sessionId: string, token: string, questio
     const existing = await transaction.quizAnswer.findUnique({ where: { participantId_questionId: { participantId: participant.id, questionId } } });
     if (existing) return { accepted: !existing.isLate, late: existing.isLate, score: existing.score, questionId, duplicate: true };
     const late = !question.opensAt || !question.closesAt || now < question.opensAt || now > question.closesAt;
+    if (question.correctOption === null) throw new QuizStateError("Question answer is not configured");
     const answer = await transaction.quizAnswer.create({ data: { participantId: participant.id, questionId, selectedOption: late ? null : selectedOption, isLate: late, isCorrect: late || selectedOption === null ? null : selectedOption === question.correctOption, score: late || selectedOption === null ? 0 : selectedOption === question.correctOption ? 1 : 0, idempotencyKey } });
     if (!late && answer.score) await transaction.quizParticipant.update({ where: { id: participant.id }, data: { score: { increment: answer.score } } });
     return { accepted: !late, late, score: answer.score, questionId };
@@ -230,6 +231,7 @@ export async function revealQuizAnswer(sessionId: string, actorId: string, idemp
     if (!session || session.status !== "LIVE" || !session.currentQuestionIndex) throw new QuizStateError("Question is not live");
     const question = session.questions.find((item) => item.order === session.currentQuestionIndex);
     if (!question) throw new QuizStateError("Question not found");
+    if (question.correctOption === null) throw new QuizStateError("Question answer is not configured");
     if (!question.closesAt || new Date() < question.closesAt) throw new QuizStateError("Question is still live; close it before publishing");
     await recordSkippedAnswers(transaction, sessionId, question.id);
     const publishedAt = new Date();
@@ -267,7 +269,11 @@ export async function publishQuizSession(sessionId: string, actorId: string, ide
     const session = await transaction.quizSession.findUnique({ where: { id: sessionId }, include: { questions: true } });
     if (!session) throw new QuizValidationError("Quiz session not found");
     assertStatus(session.status, ["DRAFT"]);
-    if (session.questions.length !== 10) throw new QuizValidationError("A quiz must contain exactly 10 questions");
+    try {
+      validateQuizForPublish(session.questions.map((question) => ({ prompt: question.prompt, options: Array.isArray(question.options) ? question.options : [], correctOption: question.correctOption })));
+    } catch (error) {
+      throw new QuizValidationError(error instanceof Error ? error.message : "Quiz has incomplete answers");
+    }
     const updated = await transaction.quizSession.update({ where: { id: sessionId }, data: { status: "READY", publishedAt: new Date(), version: { increment: 1 } } });
     await transaction.auditEvent.create({ data: { actorId, action: "quiz.session_published", entityType: "QuizSession", entityId: sessionId, afterJson: json({ questionCount: session.questions.length }) } });
     return sessionView(updated);
