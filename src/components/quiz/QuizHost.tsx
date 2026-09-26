@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { mergeQuizSessionStats, type QuizSessionStats } from "@/modules/quiz/admin-state";
 
@@ -8,13 +8,11 @@ type Question = { id: string; order: number; prompt: string; options: unknown; c
 type Session = { id: string; title: string; status: string; participantCount: number; submittedCount: number; skippedCount: number; completedCount: number; averageScore: number; currentQuestionIndex: number | null; defaultTimeLimitSeconds: number; questions: Question[] };
 export function QuizHost({ initialSessions }: { initialSessions: Session[] }) {
   const [sessions, setSessions] = useState(initialSessions);
+  const sessionsRef = useRef(sessions);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
   useEffect(() => {
-    let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
-    let closed = false;
-    let events: EventSource | undefined;
-
     const refreshSession = async (sessionId: string) => {
       const response = await fetch(`/api/quiz/${encodeURIComponent(sessionId)}`, { cache: "no-store" });
       if (!response.ok) return;
@@ -31,26 +29,10 @@ export function QuizHost({ initialSessions }: { initialSessions: Session[] }) {
         return next.stats ? mergeQuizSessionStats(updated, [next.stats]) : updated;
       });
     };
-
-    const connect = () => {
-      if (closed) return;
-      events = new EventSource("/api/events/admin");
-      events.addEventListener("quiz.changed", (event) => {
-        const payload = JSON.parse((event as MessageEvent).data) as { id?: string };
-        if (payload.id) void refreshSession(payload.id);
-      });
-      events.onerror = () => {
-        events?.close();
-        if (!closed) reconnectTimer = setTimeout(connect, 1500);
-      };
-    };
-
-    connect();
-    return () => {
-      closed = true;
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      events?.close();
-    };
+    const refreshAll = () => Promise.all(sessionsRef.current.map((session) => refreshSession(session.id))).then(() => undefined);
+    void refreshAll();
+    const timer = window.setInterval(() => void refreshAll(), 5_000);
+    return () => window.clearInterval(timer);
   }, []);
   async function call(session: Session, action: string, body: object = {}) {
     setBusy(`${session.id}:${action}`); setMessage("");

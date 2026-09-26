@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
+import { useEventStatePolling } from "@/lib/polling/useEventStatePolling";
 
 import {
   createProjectorState,
@@ -52,23 +53,13 @@ export function ProjectorScene({ initialSnapshot }: { initialSnapshot: ScreenSna
     return () => { cancelAnimationFrame(frame); geometry.dispose(); (points.material as THREE.Material).dispose(); renderer.dispose(); };
   }, []);
 
+  const { state: snapshot } = useEventStatePolling<ScreenSnapshot>({ url: "/api/screen", initialState: initialSnapshot });
+
   useEffect(() => {
-    const refresh = async () => {
-      const response = await fetch("/api/screen", { cache: "no-store" });
-      if (response.ok) {
-        const payload = await response.json();
-        setState((current) => restoreProjectorState(current, payload.data));
-      }
-    };
-    const events = new EventSource("/api/events/screen");
-    events.addEventListener("snapshot", (event) => setState((current) => restoreProjectorState(current, JSON.parse((event as MessageEvent).data))));
-    events.addEventListener("round.changed", refresh);
-    events.addEventListener("quiz.question_opened", refresh);
-    events.addEventListener("quiz.question_closed", refresh);
-    events.addEventListener("quiz.answer_published", refresh);
-    events.addEventListener("quiz.finished", refresh);
-    return () => events.close();
-  }, []);
+    if (!snapshot) return;
+    const update = window.setTimeout(() => setState((current) => restoreProjectorState(current, snapshot)), 0);
+    return () => window.clearTimeout(update);
+  }, [snapshot]);
 
   const backgroundStyle = useMemo(() => state.settings.screenBackgroundPath ? { backgroundImage: `url(${state.settings.screenBackgroundPath})` } : undefined, [state.settings.screenBackgroundPath]);
 

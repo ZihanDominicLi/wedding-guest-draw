@@ -29,7 +29,7 @@ export function QuizParticipant({ sessionId, title }: Props) {
   }, [sessionId]);
   useEffect(() => {
     const initial = window.setTimeout(() => void load(), 0);
-    const timer = window.setInterval(() => void load(), 1500);
+    const timer = window.setInterval(() => void load(), 5_000);
     return () => { window.clearTimeout(initial); window.clearInterval(timer); };
   }, [load]);
   async function submit() {

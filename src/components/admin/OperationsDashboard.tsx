@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { AlertTriangle, Baby, Database, MapPinned, Monitor, Users } from "lucide-react";
 
 import { RegistrationTrend } from "./RegistrationTrend";
+import { useEventStatePolling } from "@/lib/polling/useEventStatePolling";
 
 type Snapshot = {
   totalGuests: number;
@@ -17,21 +17,8 @@ type Snapshot = {
 };
 
 export function OperationsDashboard({ initialSnapshot }: { initialSnapshot: Snapshot }) {
-  const [snapshot, setSnapshot] = useState(initialSnapshot);
-  const [live, setLive] = useState(false);
-
-  useEffect(() => {
-    const events = new EventSource("/api/events/admin");
-    const refresh = async () => {
-      const response = await fetch("/api/admin/dashboard");
-      if (response.ok) setSnapshot((await response.json()).data);
-    };
-    events.onopen = () => setLive(true);
-    events.onerror = () => setLive(false);
-    ["guest.changed", "grouping.changed", "round.changed", "screen.presence", "health.changed"].forEach((type) => events.addEventListener(type, refresh));
-    events.addEventListener("snapshot", (event) => setSnapshot(JSON.parse((event as MessageEvent).data)));
-    return () => events.close();
-  }, []);
+  const { state: polledSnapshot } = useEventStatePolling<Snapshot>({ url: "/api/admin/dashboard", initialState: initialSnapshot });
+  const snapshot = polledSnapshot ?? initialSnapshot;
 
   const maxGroup = Math.max(1, ...snapshot.groups.map((group) => group.count));
   return (
@@ -44,7 +31,7 @@ export function OperationsDashboard({ initialSnapshot }: { initialSnapshot: Snap
       </section>
       <section className="dashboard-status-strip">
         <span><i className={snapshot.database === "healthy" ? "dot-on" : "dot-off"} /><Database size={15} />数据库 {snapshot.database === "healthy" ? "正常" : "不可用"}</span>
-        <span><i className={live ? "dot-on" : "dot-off"} /><Monitor size={15} />实时通道 {live ? "已连接" : "重连中"}</span>
+        <span><i className="dot-on" /><Monitor size={15} />状态轮询 每 5 秒</span>
         <span>投影 {snapshot.screenLastSeenAt ? "最近在线" : "尚未连接"}</span>
       </section>
       <section className="dashboard-grid">

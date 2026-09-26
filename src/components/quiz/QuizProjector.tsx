@@ -1,35 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
-
 import type { ScreenSnapshot } from "@/components/draw/projector-state";
+import { useEventStatePolling } from "@/lib/polling/useEventStatePolling";
 import { QuizTimer } from "./QuizTimer";
 
 export function QuizProjector() {
-  const [snapshot, setSnapshot] = useState<ScreenSnapshot | null>(null);
-
-  useEffect(() => {
-    const refresh = async () => {
-      try {
-        const response = await fetch("/api/screen", { cache: "no-store" });
-        if (!response.ok) return;
-        const payload = (await response.json()) as { data: ScreenSnapshot };
-        setSnapshot(payload.data);
-      } catch {
-        // EventSource reconnects automatically; the next event can refresh the snapshot.
-      }
-    };
-
-    const events = new EventSource("/api/events/screen");
-    events.addEventListener("snapshot", (event) => {
-      setSnapshot(JSON.parse((event as MessageEvent).data) as ScreenSnapshot);
-    });
-    for (const type of ["quiz.question_opened", "quiz.question_closed", "quiz.answer_published", "quiz.finished"]) {
-      events.addEventListener(type, () => void refresh());
-    }
-    void refresh();
-    return () => events.close();
-  }, []);
+  const { state: snapshot } = useEventStatePolling<ScreenSnapshot>({ url: "/api/screen" });
 
   const quiz = snapshot?.quiz;
   const question = quiz?.question;
