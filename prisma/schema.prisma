@@ -180,6 +180,7 @@ model Guest {
   enabled                Boolean                 @default(true)
   checkedInAt            DateTime                @default(now())
   deviceHash             String?
+  registrationTokenHash  String?                 @unique
   quizScore              Int?
   quizCompletedAt        DateTime?
   quizSessionId          String?
@@ -249,7 +250,7 @@ model QuizParticipant {
   id            String                @id @default(uuid())
   sessionId     String
   guestId       String
-  tokenHash     String                @unique
+  tokenHash     String
   status        QuizParticipantStatus @default(ACTIVE)
   score         Int                   @default(0)
   completedAt   DateTime?
@@ -261,6 +262,7 @@ model QuizParticipant {
 
   @@unique([sessionId, guestId])
   @@index([guestId, status])
+  @@index([tokenHash])
   @@map("quiz_participant")
 }
 

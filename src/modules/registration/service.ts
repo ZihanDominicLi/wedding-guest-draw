@@ -135,31 +135,38 @@ export async function registerGuest(
       const quizSession =
         (await transaction.quizSession.findFirst({ where: { status: "LIVE" }, orderBy: { createdAt: "desc" } })) ??
         (await transaction.quizSession.findFirst({ where: { status: "READY" }, orderBy: { createdAt: "desc" } }));
-      let quizAccess: RegistrationResult["quizAccess"] = { available: false };
+      const suppliedHash = existingQuizToken ? hashParticipantToken(existingQuizToken) : null;
+      const existingParticipant = quizSession
+        ? await transaction.quizParticipant.findUnique({
+            where: { sessionId_guestId: { sessionId: quizSession.id, guestId: guest.id } },
+          })
+        : null;
+      let rawToken: string;
+      let tokenHash: string;
+      if (suppliedHash && suppliedHash === guest.registrationTokenHash) {
+        rawToken = existingQuizToken!;
+        tokenHash = suppliedHash;
+      } else if (suppliedHash && existingParticipant?.tokenHash === suppliedHash) {
+        rawToken = existingQuizToken!;
+        tokenHash = suppliedHash;
+        await transaction.guest.update({ where: { id: guest.id }, data: { registrationTokenHash: tokenHash } });
+      } else {
+        const token = issueParticipantToken();
+        rawToken = token.rawToken;
+        tokenHash = token.tokenHash;
+        await transaction.guest.update({ where: { id: guest.id }, data: { registrationTokenHash: tokenHash } });
+      }
+      const quizAccess: RegistrationResult["quizAccess"] = {
+        available: true,
+        rawToken,
+        ...(quizSession ? { sessionId: quizSession.id } : {}),
+      };
       if (quizSession) {
-        const participant = await transaction.quizParticipant.findUnique({
+        await transaction.quizParticipant.upsert({
           where: { sessionId_guestId: { sessionId: quizSession.id, guestId: guest.id } },
+          create: { sessionId: quizSession.id, guestId: guest.id, tokenHash },
+          update: { tokenHash },
         });
-        if (participant) {
-          const suppliedHash = existingQuizToken ? hashParticipantToken(existingQuizToken) : null;
-          if (suppliedHash === participant.tokenHash) {
-            quizAccess = { available: true, sessionId: quizSession.id };
-          } else {
-            const token = issueParticipantToken();
-            await transaction.quizParticipant.update({ where: { id: participant.id }, data: { tokenHash: token.tokenHash } });
-            quizAccess = { available: true, rawToken: token.rawToken, sessionId: quizSession.id };
-          }
-        } else {
-          const token = issueParticipantToken();
-          await transaction.quizParticipant.create({
-            data: {
-              sessionId: quizSession.id,
-              guestId: guest.id,
-              tokenHash: token.tokenHash,
-            },
-          });
-          quizAccess = { available: true, rawToken: token.rawToken, sessionId: quizSession.id };
-        }
       }
 
       const matchingTags = grouping.tags.length
@@ -225,16 +232,27 @@ export async function registerGuest(
           }),
           onReplay: async (stored) => {
             const safe = stored as RegistrationResult;
-            if (!safe.quizAccess.available || !safe.quizAccess.sessionId) return safe;
-            const participant = await transaction.quizParticipant.findUnique({
-              where: { sessionId_guestId: { sessionId: safe.quizAccess.sessionId, guestId: safe.guestId } },
-            });
-            if (!participant) return safe;
             const suppliedHash = existingQuizToken ? hashParticipantToken(existingQuizToken) : null;
-            if (suppliedHash === participant.tokenHash) return safe;
             const token = issueParticipantToken();
-            await transaction.quizParticipant.update({ where: { id: participant.id }, data: { tokenHash: token.tokenHash } });
-            return { ...safe, quizAccess: { ...safe.quizAccess, rawToken: token.rawToken } };
+            const guest = await transaction.guest.findUnique({
+              where: { id: safe.guestId },
+              select: { registrationTokenHash: true },
+            });
+            if (suppliedHash && suppliedHash === guest?.registrationTokenHash) {
+              return { ...safe, quizAccess: { ...safe.quizAccess, rawToken: existingQuizToken! } };
+            }
+            await transaction.guest.update({
+              where: { id: safe.guestId },
+              data: { registrationTokenHash: token.tokenHash },
+            });
+            await transaction.quizParticipant.updateMany({
+              where: { guestId: safe.guestId },
+              data: { tokenHash: token.tokenHash },
+            });
+            return {
+              ...safe,
+              quizAccess: { ...safe.quizAccess, available: true, rawToken: token.rawToken },
+            };
           },
         },
       ),

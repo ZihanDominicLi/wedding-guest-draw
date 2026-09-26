@@ -113,9 +113,26 @@ export async function getQuizSessionStats(sessionId: string) {
 }
 
 async function participantForToken(transaction: Transaction, sessionId: string, token: string) {
-  const participant = await transaction.quizParticipant.findFirst({ where: { sessionId, tokenHash: hashParticipantToken(token), guest: { enabled: true } }, include: { session: true } });
-  if (!participant) throw new QuizParticipantError();
-  return participant;
+  const tokenHash = hashParticipantToken(token);
+  const participant = await transaction.quizParticipant.findFirst({ where: { sessionId, tokenHash, guest: { enabled: true } }, include: { session: true } });
+  if (participant) return participant;
+  const guest = await transaction.guest.findFirst({
+    where: { registrationTokenHash: tokenHash, enabled: true },
+    select: { id: true },
+  });
+  if (guest) {
+    await transaction.quizParticipant.upsert({
+      where: { sessionId_guestId: { sessionId, guestId: guest.id } },
+      create: { sessionId, guestId: guest.id, tokenHash },
+      update: { tokenHash },
+    });
+    const created = await transaction.quizParticipant.findFirst({
+      where: { sessionId, guestId: guest.id },
+      include: { session: true },
+    });
+    if (created) return created;
+  }
+  throw new QuizParticipantError();
 }
 
 async function recordSkippedAnswers(transaction: Transaction, sessionId: string, questionId: string) {
@@ -134,7 +151,22 @@ async function recordSkippedAnswers(transaction: Transaction, sessionId: string,
 }
 
 export async function getParticipantQuizState(sessionId: string, token: string) {
-  const participant = await db.quizParticipant.findFirst({ where: { sessionId, tokenHash: hashParticipantToken(token), guest: { enabled: true } }, include: { session: true } });
+  const tokenHash = hashParticipantToken(token);
+  let participant = await db.quizParticipant.findFirst({ where: { sessionId, tokenHash, guest: { enabled: true } }, include: { session: true } });
+  if (!participant) {
+    const guest = await db.guest.findFirst({
+      where: { registrationTokenHash: tokenHash, enabled: true },
+      select: { id: true },
+    });
+    if (guest) {
+      participant = await db.quizParticipant.upsert({
+        where: { sessionId_guestId: { sessionId, guestId: guest.id } },
+        create: { sessionId, guestId: guest.id, tokenHash },
+        update: { tokenHash },
+        include: { session: true },
+      });
+    }
+  }
   if (!participant) throw new QuizParticipantError();
   const state = await getQuizState(sessionId);
   const answer = state.question
