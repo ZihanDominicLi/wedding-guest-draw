@@ -7,13 +7,8 @@ import { ZodError } from "zod";
 import { requireAdmin, UnauthorizedError } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { ok, problem } from "@/lib/http";
+import { getWeddingBackgroundExtension } from "@/modules/settings/background";
 import { weddingSettingsSchema } from "@/modules/settings/schema";
-
-const allowedImages = new Map([
-  ["image/jpeg", "jpg"],
-  ["image/png", "png"],
-  ["image/webp", "webp"],
-]);
 
 export async function GET(request: Request) {
   try {
@@ -51,9 +46,9 @@ export async function PUT(request: Request) {
     let absoluteNewPath: string | null = null;
 
     if (background instanceof File && background.size > 0) {
-      const extension = allowedImages.get(background.type);
-      if (!extension || background.size > 10 * 1024 * 1024) {
-        return problem(422, "INVALID_BACKGROUND", "背景仅支持 10MB 内的 JPEG、PNG 或 WebP");
+      const extension = getWeddingBackgroundExtension(background.type, background.size);
+      if (!extension) {
+        return problem(422, "INVALID_BACKGROUND", "背景仅支持 25 MiB 内的 JPEG、PNG 或 WebP");
       }
       const uploadDirectory =
         process.env.UPLOAD_DIR ?? path.join(process.cwd(), "public", "uploads");

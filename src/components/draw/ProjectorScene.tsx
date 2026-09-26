@@ -73,8 +73,9 @@ export function ProjectorScene({ initialSnapshot }: { initialSnapshot: ScreenSna
   const backgroundStyle = useMemo(() => state.settings.screenBackgroundPath ? { backgroundImage: `url(${state.settings.screenBackgroundPath})` } : undefined, [state.settings.screenBackgroundPath]);
 
   return (
-    <main className={`projector phase-${state.phase}`} style={backgroundStyle}>
-      <div className="projector-shade" />
+    <main className={`projector phase-${state.phase}`}>
+      <div className="projector-backdrop" aria-hidden="true" style={backgroundStyle} />
+      <div className="projector-shade" aria-hidden="true" />
       <canvas ref={canvasRef} aria-hidden="true" />
       <header><p>Wedding Celebration</p><h1>{state.settings.screenTitle}</h1></header>
       {state.phase === "idle" ? <section className="projector-idle"><span>宾客抽奖</span><h2>静候仪式开始</h2></section> : null}
@@ -91,7 +92,6 @@ export function ProjectorScene({ initialSnapshot }: { initialSnapshot: ScreenSna
           <span>{state.prizeName} · {state.groupName}</span>
         </section>
       ) : null}
-      {state.quiz?.question ? <section className="quiz-projector"><p>第 {state.quiz.question.order} 题</p><h2>{state.quiz.question.prompt}</h2><div>{state.quiz.question.options.map((option, index) => <span key={index}>{String(option)}</span>)}</div>{["REVIEW", "FINISHED"].includes(state.quiz.status) && state.quiz.question.correctOption !== undefined ? <strong>答案：{String(state.quiz.question.options[state.quiz.question.correctOption])}</strong> : <small>请看主持人倒计时并完成作答</small>}</section> : null}
       <footer>{state.settings.screenBackgroundPath ? "" : "请在后台设置中上传婚礼背景照片"}</footer>
     </main>
   );

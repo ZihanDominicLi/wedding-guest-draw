@@ -60,7 +60,7 @@ export function QuizHost({ initialSessions }: { initialSessions: Session[] }) {
     const next = payload.data?.session ?? payload.data;
     setSessions((items) => items.map((item) => item.id === session.id ? { ...item, ...(next?.status ? { status: next.status } : {}), ...(next?.currentQuestionIndex !== undefined ? { currentQuestionIndex: next.currentQuestionIndex } : {}) } : item));
   }
-  return <section className="admin-panel"><header><p className="admin-eyebrow">Quiz control</p><h1>现场同步答题</h1><div className="quiz-host-header-actions"><a href="/admin/quiz/new">新建答题场次</a><a href="/quiz" target="_blank" rel="noreferrer">打开宾客答题页</a></div></header>{sessions.length ? sessions.map((session) => {
+  return <section className="admin-panel"><header><p className="admin-eyebrow">Quiz control</p><h1>现场同步答题</h1><div className="quiz-host-header-actions"><a href="/admin/quiz/new">新建答题场次</a><a href="/quiz/screen" target="_blank" rel="noreferrer">打开答题大屏</a><a href="/quiz" target="_blank" rel="noreferrer">打开宾客答题页</a></div></header>{sessions.length ? sessions.map((session) => {
     const current = session.currentQuestionIndex ? session.questions.find((q) => q.order === session.currentQuestionIndex) : null;
     const review = session.status === "REVIEW";
     return <article key={session.id} className="admin-list-row"><div><strong>{session.title}</strong><span>{session.status} · {session.participantCount} 位参与者 · 当前题提交 {session.submittedCount} · 跳过 {session.skippedCount} · 完成 {session.completedCount} · 平均 {session.averageScore.toFixed(1)} 分 · {current ? `第 ${current.order} 题` : "未开始"}</span></div><div className="quiz-host-actions">

@@ -32,7 +32,6 @@ export type ProjectorState = {
   groupName: string;
   candidates: string[];
   winners: PublicWinner[];
-  quiz: ScreenSnapshot["quiz"];
 };
 
 export function createProjectorState(
@@ -48,7 +47,6 @@ export function createProjectorState(
     groupName: "",
     candidates: [],
     winners: [],
-    quiz: null,
   };
 }
 
@@ -58,13 +56,12 @@ export function restoreProjectorState(
 ): ProjectorState {
   const round = snapshot.round;
   if (!round) {
-    return { ...createProjectorState(snapshot.settings), quiz: snapshot.quiz ?? null };
+    return createProjectorState(snapshot.settings);
   }
   if (current.roundId === round.id && current.version > round.version) return current;
 
   return {
     settings: snapshot.settings,
-    quiz: snapshot.quiz,
     phase:
       round.status === "LOCKED"
         ? "rolling"

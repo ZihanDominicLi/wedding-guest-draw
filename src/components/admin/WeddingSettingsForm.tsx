@@ -49,7 +49,7 @@ export function WeddingSettingsForm({ initialValue }: { initialValue: SettingsVa
       <label className="background-upload">
         <span>大屏背景照片</span>
         <input name="background" type="file" accept="image/jpeg,image/png,image/webp" />
-        <small>{initialValue.screenBackgroundPath ? "已上传背景，可选择新文件替换" : "支持 JPEG、PNG、WebP，最大 10MB"}</small>
+        <small>{initialValue.screenBackgroundPath ? "已上传背景，可选择新文件替换（JPEG、PNG、WebP，最大 25 MiB）" : "支持 JPEG、PNG、WebP，最大 25 MiB"}</small>
       </label>
       <label className="settings-toggle">
         <input name="registrationOpen" type="checkbox" defaultChecked={initialValue.registrationOpen} />
