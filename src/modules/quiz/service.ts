@@ -12,6 +12,7 @@ import {
   type QuizParticipantView,
   type QuizQuestionView,
   type QuizSessionView,
+  type AnswerReceipt,
 } from "./types";
 
 type Transaction = Parameters<Parameters<PrismaClient["$transaction"]>[0]>[0];
@@ -251,6 +252,74 @@ export async function submitQuizAnswer(sessionId: string, token: string, questio
     const existing = participant ? await db.quizAnswer.findUnique({ where: { participantId_questionId: { participantId: participant.id, questionId } } }) : null;
     if (!existing) throw error;
     return { accepted: !existing.isLate, late: existing.isLate, score: existing.score, questionId, duplicate: true };
+  }
+}
+
+function eventAnswerReceipt(answer: {
+  id: string;
+  submissionId: string | null;
+  questionId: string;
+  selectedOption: number | null;
+  isLate: boolean;
+  score: number;
+  submittedAt: Date;
+}): AnswerReceipt {
+  return {
+    submissionId: answer.submissionId ?? answer.id,
+    questionId: answer.questionId,
+    accepted: !answer.isLate,
+    selectedOption: answer.selectedOption,
+    isLate: answer.isLate,
+    score: answer.score,
+    submittedAt: answer.submittedAt.toISOString(),
+  };
+}
+
+export async function submitEventAnswer(
+  eventId: string,
+  token: string,
+  input: { questionId: string; optionIndex: number; submissionId: string },
+): Promise<AnswerReceipt> {
+  if (!input.submissionId.trim() || input.submissionId.length > 160) throw new QuizValidationError("Invalid submission identifier");
+  if (!Number.isInteger(input.optionIndex) || input.optionIndex < 0) throw new QuizValidationError("Invalid answer option");
+  try {
+    return await db.$transaction(async (transaction) => withTransactionIdempotency(
+      transaction,
+      `quiz:event-answer:${eventId}:${input.submissionId}`,
+      input.submissionId,
+      async () => {
+        const participant = await participantForToken(transaction, eventId, token);
+        const session = await transaction.quizSession.findUnique({ where: { id: eventId } });
+        if (!session) throw new QuizValidationError("Quiz session not found");
+        if (session.phase !== "QUESTION" || session.currentQuestionIndex === null) throw new QuizStateError("Question is closed");
+        const question = await transaction.quizQuestion.findFirst({ where: { id: input.questionId, sessionId: eventId } });
+        if (!question) throw new QuizValidationError("Question not found");
+        if (question.order !== session.currentQuestionIndex) throw new QuizStateError("Question is closed");
+        if (!Array.isArray(question.options) || input.optionIndex >= question.options.length) throw new QuizValidationError("Invalid answer option");
+        if (question.correctOption === null) throw new QuizStateError("Question answer is not configured");
+        const existing = await transaction.quizAnswer.findUnique({ where: { participantId_questionId: { participantId: participant.id, questionId: input.questionId } } });
+        if (existing) return eventAnswerReceipt(existing);
+        const answer = await transaction.quizAnswer.create({
+          data: {
+            participantId: participant.id,
+            questionId: input.questionId,
+            submissionId: input.submissionId,
+            selectedOption: input.optionIndex,
+            isLate: false,
+            isCorrect: input.optionIndex === question.correctOption,
+            score: input.optionIndex === question.correctOption ? 10 : 0,
+          },
+        });
+        return eventAnswerReceipt(answer);
+      },
+      { serialize: (value) => value, onReplay: async (stored) => stored as AnswerReceipt },
+    ));
+  } catch (error) {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") throw error;
+    const participant = await db.quizParticipant.findFirst({ where: { sessionId: eventId, tokenHash: hashParticipantToken(token) } });
+    const existing = participant ? await db.quizAnswer.findUnique({ where: { submissionId: input.submissionId } }) : null;
+    if (!existing) throw error;
+    return eventAnswerReceipt(existing);
   }
 }
 
